@@ -48,32 +48,47 @@ Branch on `value.code`.
 
 ## Chat-service error codes
 
-| `errorCode` |  HTTP | Description                                                                                                       |
-| ----------: | ----: | ----------------------------------------------------------------------------------------------------------------- |
-|       `911` | `401` | Skype token missing, expired, or revoked. Refresh and retry once.                                                 |
-|       `912` | `401` | Skype token signed for a different region. Re-issue against the correct region.                                   |
-|      `1000` | `400` | Generic validation failure. Inspect `message`.                                                                    |
-|      `1003` | `400` | Body too large.                                                                                                   |
-|      `1102` | `400` | Malformed conversation MRI in the path.                                                                           |
-|      `5000` | `500` | Transient backend error. Retry once.                                                                              |
-|      `7000` | `403` | Sender blocked by recipient.                                                                                      |
-|      `7100` | `403` | Caller is not a participant, or a conversation policy prohibits the action.                                       |
-|      `8002` | `404` | Conversation not found, or not visible to the caller.                                                             |
-|      `8003` | `404` | Conversation lives in a different region. Re-discover the service map and retry against the new chat-service URL. |
-|      `8400` | `409` | Duplicate `clientmessageid`. Treat as success; the original message id is in the `Location` header.               |
-|     `19000` | `429` | Throttled. Honor `Retry-After`.                                                                                   |
+| `errorCode` |  HTTP | Description                                                                                                                                                  |
+| ----------: | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+|       `911` | `401` | Skype token missing, expired, or revoked. Refresh via [`POST /api/auth/v1.0/authz/consumer`](./authentication.md#exchange-for-a-skype-token) and retry once. |
+|       `912` | `401` | Skype token signed for a different region. Re-issue against the correct region.                                                                              |
+|      `1000` | `400` | Generic validation failure. Inspect `message`.                                                                                                               |
+|      `1003` | `400` | Body too large.                                                                                                                                              |
+|      `1102` | `400` | Malformed conversation MRI in the path.                                                                                                                      |
+|      `5000` | `500` | Transient backend error. Retry once.                                                                                                                         |
+|      `7000` | `403` | Sender blocked by recipient.                                                                                                                                 |
+|      `7100` | `403` | Caller is not a participant, or a conversation policy prohibits the action.                                                                                  |
+|      `8002` | `404` | Conversation not found, or not visible to the caller.                                                                                                        |
+|      `8003` | `404` | Conversation lives in a different region. Re-discover the service map and retry against the new chat-service URL.                                            |
+|      `8400` | `409` | Duplicate `clientmessageid`. Treat as success; the original message id is in the `Location` header.                                                          |
+|     `19000` | `429` | Throttled. Honor `Retry-After`.                                                                                                                              |
+
+## Identity-platform error codes
+
+Returned by the Microsoft identity platform token endpoint (`/oauth2/v2.0/token`) and the device-code endpoint (`/oauth2/v2.0/devicecode`). The envelope is `{ "error": "<code>", "error_description": "<text>", "error_codes": [<int>], "timestamp": "<iso>", "trace_id": "<guid>", "correlation_id": "<guid>" }`.
+
+| `error`                  |  HTTP | Description                                                                                                                                              |
+| ------------------------ | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authorization_pending`  | `400` | Returned by the token endpoint while polling a device-code grant. The user has not yet completed sign-in. Continue polling at `interval` seconds.        |
+| `slow_down`              | `400` | Polling too aggressively. Increase the polling interval by 5 seconds.                                                                                    |
+| `expired_token`          | `400` | The device code expired before the user signed in. Restart the device-code flow.                                                                         |
+| `authorization_declined` | `400` | The user explicitly rejected consent. Surface to the caller; do not retry.                                                                               |
+| `invalid_grant`          | `400` | The refresh token has been revoked or has expired. Restart the device-code flow.                                                                         |
+| `invalid_client`         | `401` | The `client_id` is wrong.                                                                                                                                |
+| `unauthorized_client`    | `400` | The client is not configured for the requested grant type. Should not occur with the Teams Live client and device code, which is verified to be allowed. |
+| `invalid_scope`          | `400` | The `scope` value is malformed or unrecognised.                                                                                                          |
 
 ## Authz error codes
 
 Returned by `POST /api/auth/v1.0/authz/consumer`.
 
-| `value.code`           |  HTTP | Description                                                                            |
-| ---------------------- | ----: | -------------------------------------------------------------------------------------- |
-| `AuthFailure`          | `401` | The MSA access token is invalid or expired.                                            |
-| `AuthFailure.Audience` | `401` | The MSA access token's `aud` claim is wrong for this audience.                         |
-| `Forbidden`            | `403` | The signed-in account is a work or school account; consumer endpoints are unavailable. |
-| `Throttled`            | `429` | Token-exchange rate exceeded.                                                          |
-| `InternalError`        | `500` | Transient backend error.                                                               |
+| `value.code`           |  HTTP | Description                                                                                                                                                        |
+| ---------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AuthFailure`          | `401` | The MSA access token is invalid or expired. Refresh via the token endpoint and retry.                                                                              |
+| `AuthFailure.Audience` | `401` | The MSA access token's `aud` claim is wrong for this audience. The scope on the access-token request must be exactly `service::api.fl.spaces.skype.com::MBI_SSL`.  |
+| `Forbidden`            | `403` | The signed-in account is a work or school account; consumer endpoints are unavailable. `skypeToken.isBusinessTenant` would be `true` if the exchange were allowed. |
+| `Throttled`            | `429` | Token-exchange rate exceeded.                                                                                                                                      |
+| `InternalError`        | `500` | Transient backend error.                                                                                                                                           |
 
 ## Rate limiting
 
