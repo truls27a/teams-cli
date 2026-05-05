@@ -102,16 +102,25 @@ var chatViewCmd = &cobra.Command{
 			return enc.Encode(msgs)
 		}
 
+		type row struct{ name, when, body, flag string }
+		today := time.Now().Format("2006-01-02")
+		rows := make([]row, 0, len(msgs))
+		nameWidth := 0
 		for _, m := range msgs {
-			if strings.HasPrefix(m.Messagetype, "Control/") {
+			if strings.HasPrefix(m.Messagetype, "Control/") || strings.HasPrefix(m.Messagetype, "ThreadActivity/") {
 				continue
 			}
-			when := m.OriginalArrivalTime
-			if when == "" {
-				when = m.ComposeTime
+			raw := m.OriginalArrivalTime
+			if raw == "" {
+				raw = m.ComposeTime
 			}
-			if t, err := time.Parse(time.RFC3339Nano, when); err == nil {
-				when = t.Format("2006-01-02 15:04")
+			when := raw
+			if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+				if t.Format("2006-01-02") == today {
+					when = t.Format("15:04")
+				} else {
+					when = t.Format("01-02 15:04")
+				}
 			}
 			flag := ""
 			if _, ok := m.Properties["deletetime"]; ok {
@@ -119,9 +128,34 @@ var chatViewCmd = &cobra.Command{
 			} else if _, ok := m.Properties["edittime"]; ok {
 				flag = " [edited]"
 			}
-			fmt.Printf("[%s] %s%s\n", when, m.IMDisplayName, flag)
-			for _, line := range strings.Split(renderContent(m.Content, m.Messagetype), "\n") {
-				fmt.Printf("    %s\n", line)
+			name := m.IMDisplayName
+			if name == "" {
+				name = m.From
+				if i := strings.LastIndex(name, "/"); i >= 0 {
+					name = name[i+1:]
+				}
+				if i := strings.LastIndex(name, ":"); i >= 0 {
+					name = name[i+1:]
+				}
+				if name == "" {
+					name = "(unknown)"
+				} else if len(name) > 8 {
+					name = name[:8]
+				}
+			}
+			if n := len([]rune(name)); n > nameWidth {
+				nameWidth = n
+			}
+			rows = append(rows, row{name, when, renderContent(m.Content, m.Messagetype), flag})
+		}
+		if nameWidth > 24 {
+			nameWidth = 24
+		}
+		for _, r := range rows {
+			lines := strings.Split(r.body, "\n")
+			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
+			for _, line := range lines[1:] {
+				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
 			}
 		}
 		return nil
@@ -180,12 +214,27 @@ func fetchAllMessages(ctx context.Context, client *teams.Client, convID string) 
 	return msgs, nil
 }
 
-var tagRE = regexp.MustCompile(`<[^>]+>`)
+var (
+	tagRE    = regexp.MustCompile(`<[^>]+>`)
+	anchorRE = regexp.MustCompile(`(?is)<a\b[^>]*\bhref="([^"]+)"[^>]*>(.*?)</a>`)
+)
 
 func renderContent(content, messagetype string) string {
 	if messagetype == "RichText/Html" {
-		s := tagRE.ReplaceAllString(content, "")
-		s = strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&quot;", `"`, "&#39;", "'").Replace(s)
+		s := anchorRE.ReplaceAllStringFunc(content, func(m string) string {
+			sub := anchorRE.FindStringSubmatch(m)
+			href, text := sub[1], tagRE.ReplaceAllString(sub[2], "")
+			text = strings.TrimSpace(text)
+			if text == "" || text == href || strings.HasSuffix(text, "…") {
+				return href
+			}
+			return text + " (" + href + ")"
+		})
+		s = tagRE.ReplaceAllString(s, "")
+		s = strings.NewReplacer(
+			"&amp;", "&", "&lt;", "<", "&gt;", ">",
+			"&quot;", `"`, "&#39;", "'", "&nbsp;", " ",
+		).Replace(s)
 		return strings.TrimSpace(s)
 	}
 	return strings.TrimSpace(content)
