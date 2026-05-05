@@ -26,7 +26,7 @@ A Message is a single entry in a [Conversation](./conversations.md). The same co
 | `parentmessageid`           | string                                  | For replies: the `id` of the message being replied to. Absent on top-level messages.                                                                                                                        |
 | `skypeeditedid`             | string                                  | For edits: the `id` of the original message. Equal to `id` for the first edit, then carried forward.                                                                                                        |
 | `amsreferences`             | array \| null                           | AMS object identifiers attached to the message. `null` when no attachments.                                                                                                                                 |
-| `properties`                | [MessageProperties](#messageproperties) | Per-message metadata.                                                                                                                                                                                       |
+| `properties`                | [MessageProperties](#messageproperties) \| array | Per-message metadata. Returns an empty array `[]` on some system messages rather than an object.                                                        |
 
 ### MessageProperties
 

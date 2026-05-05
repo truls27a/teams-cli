@@ -99,9 +99,9 @@ var chatViewCmd = &cobra.Command{
 				when = t.Format("2006-01-02 15:04")
 			}
 			flag := ""
-			if m.Properties["deletetime"] != "" {
+			if _, ok := m.Properties["deletetime"]; ok {
 				flag = " [deleted]"
-			} else if m.Properties["edittime"] != "" {
+			} else if _, ok := m.Properties["edittime"]; ok {
 				flag = " [edited]"
 			}
 			fmt.Printf("[%s] %s%s\n", when, m.IMDisplayName, flag)

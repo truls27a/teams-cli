@@ -24,7 +24,7 @@ type Message struct {
 	ParentMessageID     string            `json:"parentmessageid,omitempty"`
 	SkypeEditedID       string            `json:"skypeeditedid,omitempty"`
 	AMSReferences       []string          `json:"amsreferences"`
-	Properties          map[string]string `json:"properties"`
+	Properties          map[string]any    `json:"properties"`
 }
 
 type listMessagesResponse struct {
