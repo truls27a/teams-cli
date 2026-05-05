@@ -32,6 +32,8 @@ A Conversation represents a thread of messages between two or more participants.
 
 The `19:` thread MRI suffix encodes the thread fabric: `@thread.v2` for cross-tenant or modern threads, `@thread.skype` for legacy group chats, and `@thread.tacv2` for Teams channel posts.
 
+Federated one-to-one chats between a work/school account and a personal Microsoft account use the `19:uni01_<hash>@thread.v2` shape. These appear as `productThreadType: OneToOneChat` in the conversation list. The personal-account participant's MRI is in the form `8:live:<username>` or `8:live:.cid.<hex>`. `threadProperties.creator` is `null` for these threads and `lastMessage.from` only reflects the last sender.
+
 ### ConversationProperties
 
 A string-to-string map. Common entries:
@@ -53,7 +55,7 @@ A string-to-string map. Common entries:
 | `productThreadType`   | Surface classification. `OneToOneChat` for a federated 1:1; `Chat` for a group chat; `TopicThread` for a channel thread.                |
 | `topic`               | Group title. Empty for one-to-one threads.                                                                                              |
 | `createdat`           | Unix-millisecond creation timestamp.                                                                                                   |
-| `creator`             | MRI of the user who created the thread.                                                                                                |
+| `creator`             | MRI of the user who created the thread. `null` for federated one-to-one threads (`19:uni01_*`).                                        |
 | `memberCount`         | Number of participants, as a stringified integer. `null` for federated one-to-one threads.                                              |
 | `originalThreadId`    | Predecessor thread MRI when the thread was migrated; equal to `id` otherwise.                                                          |
 | `lastSequenceId`      | Sequence number of the last delivered message. See [`Message.sequenceId`](./messages.md#the-message-object).                            |
