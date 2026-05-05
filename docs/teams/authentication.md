@@ -1,6 +1,6 @@
 # Authentication
 
-The Teams API uses two credentials, each scoped to its service. The chat service accepts a Skype token; the chat-service aggregator (CSA) accepts an Azure AD bearer token whose audience is the aggregator. Both are derived from the same Microsoft identity-platform sign-in and from the same OAuth 2.0 refresh token; only the access-token request scope differs.
+The Teams API uses three credentials, each scoped to its service. The chat service accepts a Skype token. The chat-service aggregator (CSA) accepts an Azure AD bearer token whose audience is the aggregator. The middle tier (MT) accepts an Azure AD bearer token whose audience is `api.spaces.skype.com` — the same access token that is exchanged for the Skype token. All three are derived from the same Microsoft identity-platform sign-in and from the same OAuth 2.0 refresh token; only the access-token request scope differs.
 
 ```http
 Authentication: skypetoken=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -18,7 +18,7 @@ Requests without a valid token return [`401 Unauthorized`](./errors.md) with `er
 
 Four steps:
 
-1. Acquire an Azure AD access token using the Microsoft identity platform, with scope `https://api.spaces.skype.com/.default`.
+1. Acquire an Azure AD access token using the Microsoft identity platform, with scope `https://api.spaces.skype.com/.default`. Persist this token; in addition to its role in the Skype-token exchange below, it doubles as the bearer credential for the middle tier.
 2. Exchange that token for a Skype token. Use the Skype token on every chat-service call.
 3. Using the same refresh token, acquire a second Azure AD access token with scope `https://chatsvcagg.teams.microsoft.com/.default`. Use it directly as `Authorization: Bearer` on every CSA call.
 4. Refresh each access token before its `expires_in` elapses; rotate the refresh token whenever the token endpoint returns a new one.
@@ -164,7 +164,7 @@ client_id=1fec8e78-bce4-4aaf-ab1b-5451cc387264
 
 The same refresh token mints both the spaces-audience token (used for the Skype-token exchange) and the aggregator-audience token; multi-resource refresh is the default behaviour for public clients on the Microsoft identity platform. Replace the stored refresh token with the rotated value if one is returned.
 
-Requests issued with a token whose audience is `api.spaces.skype.com` against CSA, or vice-versa, are rejected with `401 Unauthorized`.
+Requests issued with a token whose audience is `api.spaces.skype.com` against CSA, or vice-versa, are rejected with `401 Unauthorized`. The middle tier is the exception: it consumes the same `api.spaces.skype.com` access token that the Skype-token exchange uses.
 
 ## Use the Skype token
 
@@ -186,6 +186,19 @@ Authorization: Bearer eyJ0eXAi...
 ```
 
 The aggregator does not require `BehaviorOverride` and does not accept `Authentication: skypetoken=`.
+
+## Use the spaces-audience bearer token
+
+The middle tier accepts the same access token that is exchanged for the Skype token — its audience is `api.spaces.skype.com`. Re-use it directly:
+
+```http
+POST /emea/beta/users/fetchShortProfile HTTP/1.1
+Host: teams.microsoft.com
+Authorization: Bearer eyJ0eXAi...
+Content-Type: application/json
+```
+
+The middle tier rejects the aggregator-audience bearer with `401 Unauthorized`. Token audiences are not interchangeable across services.
 
 ## User MRI
 
@@ -209,12 +222,12 @@ User-Agent:       <client identifier>
 
 ## Token lifetimes and refresh
 
-| Token                   | Lifetime          | Refresh                                                                                                                                                                  |
-| ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AAD access (spaces aud) | ~2 hours          | Re-call the token endpoint with `grant_type=refresh_token` and `scope=https://api.spaces.skype.com/.default`.                                                            |
-| AAD access (CSA aud)    | ~75 minutes       | Re-call the token endpoint with `grant_type=refresh_token` and `scope=https://chatsvcagg.teams.microsoft.com/.default`. The CSA token is used directly; no exchange step. |
-| Skype                   | ~2 hours          | Re-call `POST /api/authsvc/v1.0/authz` with a current spaces-audience AAD access token.                                                                                  |
-| AAD refresh             | ~90 days, sliding | Rotated on every redemption against either scope. The response carries a new `refresh_token` that supersedes the previous one. Persist the latest value.                |
+| Token                   | Lifetime          | Used by                                                                | Refresh                                                                                                                                                                  |
+| ----------------------- | ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AAD access (spaces aud) | ~2 hours          | Skype-token exchange; middle tier (`Authorization: Bearer`).           | Re-call the token endpoint with `grant_type=refresh_token` and `scope=https://api.spaces.skype.com/.default`.                                                            |
+| AAD access (CSA aud)    | ~75 minutes       | Chat-service aggregator (`Authorization: Bearer`).                     | Re-call the token endpoint with `grant_type=refresh_token` and `scope=https://chatsvcagg.teams.microsoft.com/.default`. Used directly; no exchange step.                  |
+| Skype                   | ~2 hours          | Chat service (`Authentication: skypetoken=`).                          | Re-call `POST /api/authsvc/v1.0/authz` with a current spaces-audience AAD access token.                                                                                  |
+| AAD refresh             | ~90 days, sliding | Mints both AAD access tokens above.                                    | Rotated on every redemption against either scope. The response carries a new `refresh_token` that supersedes the previous one. Persist the latest value.                |
 
 To refresh the access token:
 
@@ -231,7 +244,7 @@ client_id=1fec8e78-bce4-4aaf-ab1b-5451cc387264
 
 The response shape is identical to the device-code token response. Replace the stored refresh token with the new one before the next refresh.
 
-On chat-service `401 errorCode 911`, refresh the Skype token once and retry. On a second `401`, refresh the spaces-audience AAD access token (and the refresh token if expired) and retry. On CSA `401`, refresh the CSA-audience AAD access token and retry. If refresh fails on either path, re-run the device-code flow.
+On chat-service `401 errorCode 911`, refresh the Skype token once and retry. On a second `401`, refresh the spaces-audience AAD access token (and the refresh token if expired) and retry. On CSA `401`, refresh the CSA-audience AAD access token and retry. On middle-tier `401`, refresh the spaces-audience AAD access token and retry. If refresh fails on any path, re-run the device-code flow.
 
 ## Conditional Access
 
