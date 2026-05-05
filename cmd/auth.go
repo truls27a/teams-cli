@@ -95,6 +95,13 @@ var authStatusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		a, err := loadAuth()
 		if os.IsNotExist(err) {
+			if jsonOutput {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(struct {
+					LoggedIn bool `json:"logged_in"`
+				}{false})
+			}
 			fmt.Println("Not logged in.")
 			return nil
 		}
@@ -104,7 +111,12 @@ var authStatusCmd = &cobra.Command{
 		if jsonOutput {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
-			return enc.Encode(a)
+			return enc.Encode(struct {
+				LoggedIn    bool      `json:"logged_in"`
+				TokenExpiry time.Time `json:"token_expiry"`
+				SkypeExpiry time.Time `json:"skype_expiry"`
+				Region      string    `json:"region"`
+			}{true, a.Expiry, a.SkypeExpiry, a.BaseURL})
 		}
 		fmt.Printf("Token expiry: %s\n", a.Expiry.Format(time.RFC3339))
 		fmt.Printf("Skype expiry: %s\n", a.SkypeExpiry.Format(time.RFC3339))
@@ -119,11 +131,25 @@ var authLogoutCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		err := os.Remove(authPath())
 		if os.IsNotExist(err) {
+			if jsonOutput {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(struct {
+					LoggedIn bool `json:"logged_in"`
+				}{false})
+			}
 			fmt.Println("Not logged in.")
 			return nil
 		}
 		if err != nil {
 			return err
+		}
+		if jsonOutput {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(struct {
+				LoggedOut bool `json:"logged_out"`
+			}{true})
 		}
 		fmt.Println("Logged out.")
 		return nil

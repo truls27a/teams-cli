@@ -46,9 +46,18 @@ var chatListCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
+			type item struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+				ID   string `json:"id"`
+			}
+			out := make([]item, 0, len(convs))
+			for _, c := range convs {
+				out = append(out, item{convDisplay(c), convType(c), c.ID})
+			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
-			return enc.Encode(convs)
+			return enc.Encode(out)
 		}
 
 		fmt.Printf("%-30s  %-8s  %s\n", "NAME", "TYPE", "ID")
@@ -96,13 +105,11 @@ var chatViewCmd = &cobra.Command{
 			msgs[i], msgs[j] = msgs[j], msgs[i]
 		}
 
-		if jsonOutput {
-			enc := json.NewEncoder(os.Stdout)
-			enc.SetIndent("", "  ")
-			return enc.Encode(msgs)
+		type row struct {
+			name, when, body, flag string
+			deleted, edited        bool
+			whenISO               string
 		}
-
-		type row struct{ name, when, body, flag string }
 		today := time.Now().Format("2006-01-02")
 		rows := make([]row, 0, len(msgs))
 		nameWidth := 0
@@ -123,9 +130,11 @@ var chatViewCmd = &cobra.Command{
 				}
 			}
 			flag := ""
-			if _, ok := m.Properties["deletetime"]; ok {
+			_, deleted := m.Properties["deletetime"]
+			_, edited := m.Properties["edittime"]
+			if deleted {
 				flag = " [deleted]"
-			} else if _, ok := m.Properties["edittime"]; ok {
+			} else if edited {
 				flag = " [edited]"
 			}
 			name := m.IMDisplayName
@@ -146,7 +155,24 @@ var chatViewCmd = &cobra.Command{
 			if n := len([]rune(name)); n > nameWidth {
 				nameWidth = n
 			}
-			rows = append(rows, row{name, when, renderContent(m.Content, m.Messagetype), flag})
+			rows = append(rows, row{name, when, renderContent(m.Content, m.Messagetype), flag, deleted, edited, raw})
+		}
+
+		if jsonOutput {
+			type item struct {
+				Name    string `json:"name"`
+				Time    string `json:"time"`
+				Body    string `json:"body"`
+				Deleted bool   `json:"deleted,omitempty"`
+				Edited  bool   `json:"edited,omitempty"`
+			}
+			out := make([]item, 0, len(rows))
+			for _, r := range rows {
+				out = append(out, item{r.name, r.whenISO, r.body, r.deleted, r.edited})
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(out)
 		}
 		if nameWidth > 24 {
 			nameWidth = 24
@@ -184,7 +210,10 @@ var chatSendCmd = &cobra.Command{
 		if jsonOutput {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
-			return enc.Encode(resp)
+			return enc.Encode(struct {
+				Sent bool  `json:"sent"`
+				ID   int64 `json:"id"`
+			}{true, resp.OriginalArrivalTime})
 		}
 		fmt.Printf("Sent (id: %d).\n", resp.OriginalArrivalTime)
 		return nil
