@@ -17,17 +17,26 @@ type Client struct {
 	CSABaseURL string
 	CSAToken   string
 
+	MTBaseURL string
+	MTToken   string
+
 	SelfMRI string
 
 	HTTP *http.Client
 }
 
-func NewClient(messagingBaseURL, skypeToken, csaToken, selfMRI string) *Client {
+func NewClient(messagingBaseURL, skypeToken, csaToken, region, mtToken, selfMRI string) *Client {
+	mtBase := ""
+	if region != "" {
+		mtBase = "https://teams.microsoft.com/api/mt/" + region + "/beta"
+	}
 	return &Client{
 		MessagingBaseURL: messagingBaseURL,
 		SkypeToken:       skypeToken,
 		CSABaseURL:       CSABaseURL,
 		CSAToken:         csaToken,
+		MTBaseURL:        mtBase,
+		MTToken:          mtToken,
 		SelfMRI:          selfMRI,
 		HTTP:             &http.Client{},
 	}
@@ -77,6 +86,17 @@ func (c *Client) doMessaging(ctx context.Context, method, pathOrURL string, body
 }
 
 func (c *Client) doCSA(ctx context.Context, method, path string, body any, out any) error {
+	return c.doBearer(ctx, method, c.CSABaseURL+path, c.CSAToken, body, out)
+}
+
+func (c *Client) doMT(ctx context.Context, method, path string, body any, out any) error {
+	if c.MTBaseURL == "" {
+		return fmt.Errorf("middle tier unavailable: no region known")
+	}
+	return c.doBearer(ctx, method, c.MTBaseURL+path, c.MTToken, body, out)
+}
+
+func (c *Client) doBearer(ctx context.Context, method, url, token string, body any, out any) error {
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -86,13 +106,11 @@ func (c *Client) doCSA(ctx context.Context, method, path string, body any, out a
 		bodyReader = bytes.NewReader(b)
 	}
 
-	url := c.CSABaseURL + path
-
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.CSAToken)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

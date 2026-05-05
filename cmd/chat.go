@@ -45,6 +45,8 @@ var chatListCmd = &cobra.Command{
 			chats = filtered
 		}
 
+		names := resolveMissingNames(context.Background(), client, chats)
+
 		if jsonOutput {
 			type item struct {
 				Name string `json:"name"`
@@ -53,7 +55,7 @@ var chatListCmd = &cobra.Command{
 			}
 			out := make([]item, 0, len(chats))
 			for _, c := range chats {
-				out = append(out, item{chatDisplay(c, client.SelfMRI), chatType(c), c.ID})
+				out = append(out, item{chatDisplay(c, client.SelfMRI, names), chatType(c), c.ID})
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -63,10 +65,42 @@ var chatListCmd = &cobra.Command{
 		fmt.Printf("%-30s  %-8s  %s\n", "NAME", "TYPE", "ID")
 		fmt.Println(strings.Repeat("-", 80))
 		for _, c := range chats {
-			fmt.Printf("%-30s  %-8s  %s\n", truncate(chatDisplay(c, client.SelfMRI), 30), chatType(c), c.ID)
+			fmt.Printf("%-30s  %-8s  %s\n", truncate(chatDisplay(c, client.SelfMRI, names), 30), chatType(c), c.ID)
 		}
 		return nil
 	},
+}
+
+func resolveMissingNames(ctx context.Context, client *teams.Client, chats []teams.Chat) map[string]string {
+	seen := map[string]bool{}
+	var mris []string
+	for _, c := range chats {
+		for _, m := range c.Members {
+			if m.MRI == client.SelfMRI || m.FriendlyName != "" || seen[m.MRI] {
+				continue
+			}
+			if !strings.HasPrefix(m.MRI, "8:orgid:") && !strings.HasPrefix(m.MRI, "28:") {
+				continue
+			}
+			seen[m.MRI] = true
+			mris = append(mris, m.MRI)
+		}
+	}
+	if len(mris) == 0 {
+		return nil
+	}
+	users, err := client.FetchShortProfile(ctx, mris)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: name resolution via middle tier failed: %v\n", err)
+		return nil
+	}
+	out := make(map[string]string, len(users))
+	for _, u := range users {
+		if u.DisplayName != "" {
+			out[u.MRI] = u.DisplayName
+		}
+	}
+	return out
 }
 
 var (
@@ -288,7 +322,7 @@ func truncate(s string, n int) string {
 	return string([]rune(s)[:n-1]) + "…"
 }
 
-func chatDisplay(c teams.Chat, selfMRI string) string {
+func chatDisplay(c teams.Chat, selfMRI string, resolved map[string]string) string {
 	if c.Title != nil && *c.Title != "" {
 		return *c.Title
 	}
@@ -297,10 +331,17 @@ func chatDisplay(c teams.Chat, selfMRI string) string {
 	}
 	var names []string
 	for _, m := range c.Members {
-		if m.MRI == selfMRI || m.FriendlyName == "" {
+		if m.MRI == selfMRI {
 			continue
 		}
-		names = append(names, m.FriendlyName)
+		name := m.FriendlyName
+		if name == "" {
+			name = resolved[m.MRI]
+		}
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
 	}
 	switch {
 	case len(names) == 0:
