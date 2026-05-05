@@ -13,7 +13,7 @@ A Conversation represents a thread of messages between two or more participants.
 | `targetLink`                | string                                              | Self-link to the conversation resource.                                                                                                                      |
 | `messages`                  | string                                              | Absolute URL of the conversation's message collection.                                                                                                       |
 | `version`                   | integer                                             | Server-side version stamp (Unix milliseconds), bumped on every server-side mutation.                                                                         |
-| `lastUpdatedMessageId`      | string                                              | `id` of the most recently delivered or mutated message.                                                                                                      |
+| `lastUpdatedMessageId`      | integer                                             | `id` of the most recently delivered or mutated message. Returned as a bare integer, not a string.                                                            |
 | `lastUpdatedMessageVersion` | integer                                             | `version` of that message.                                                                                                                                   |
 | `lastRcMetadataVersion`     | integer                                             | Version stamp on the conversation's roster / control metadata.                                                                                               |
 | `lastMessage`               | [Message](./messages.md#the-message-object) \| null | The most recent message in the conversation, or `null` for empty threads. The embedded message also carries a `sequenceId` and a `clientmessageid` echo.     |
@@ -28,7 +28,9 @@ A Conversation represents a thread of messages between two or more participants.
 | `8:orgid:` | Native one-to-one with another user in the caller's tenant. `id` is the other participant's user MRI; `threadProperties` is `null`.                                         | `8:orgid:<guid>`              |
 | `8:live:`  | Native one-to-one with a personal Microsoft account on the consumer chat fabric. Rare; most cross-fabric chats are realised as `19:` threads.                                | `8:live:<id>`                 |
 | `19:`      | Thread. Used for group chats, channel threads, and federated one-to-one chats. Distinguish by `threadProperties.productThreadType` (`OneToOneChat` for federated 1:1, `Chat` for group, `TopicThread` for channel posts). | `19:abcd0123…@thread.v2`      |
+| `19:meeting_` | Calendar meeting chat thread. MRI suffix is always `@thread.v2`.                                                                                                       | `19:meeting_<base64>@thread.v2` |
 | `48:bot:`  | One-to-one with a bot.                                                                                                                                                       | `48:bot:...`                  |
+| `48:`      | System feed. Known values: `48:notifications`, `48:mentions`, `48:notes`, `48:calllogs`, `48:drafts`.                                                                        | `48:notifications`            |
 
 The `19:` thread MRI suffix encodes the thread fabric: `@thread.v2` for cross-tenant or modern threads, `@thread.skype` for legacy group chats, and `@thread.tacv2` for Teams channel posts.
 
@@ -36,45 +38,57 @@ Federated one-to-one chats between a work/school account and a personal Microsof
 
 ### ConversationProperties
 
-A string-to-string map. Common entries:
+A map of string keys to values. Most values are strings; some are integers (e.g. `draftVersion`). Common entries:
 
-| Key                    | Description                                                                                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `consumptionhorizon`   | Read marker, formatted as `<lastReadMessageId>;<lastReadArrivalMs>;<lastSentByMeArrivalMs>`. Updated via [Mark a conversation as read](#mark-a-conversation-as-read). |
-| `lastimreceivedtime`   | Unix-millisecond timestamp of the most recent incoming message.                                                                                                      |
-| `isemptyconversation`  | `"true"` or `"false"`.                                                                                                                                               |
-| `pinnedindex`          | Zero-based pin position. Present only when the conversation is pinned.                                                                                               |
-| `mute`                 | JSON-encoded `{ "isMuted": boolean, "until": integer }`. Present only when notifications are muted.                                                                  |
-| `userTileId`           | Opaque tile identifier for the contact card.                                                                                                                         |
+| Key                          | Type    | Description                                                                                                                                                          |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `consumptionhorizon`         | string  | Read marker, formatted as `<lastReadMessageId>;<lastReadArrivalMs>;<lastSentByMeArrivalMs>`. Updated via [Mark a conversation as read](#mark-a-conversation-as-read). |
+| `consumptionHorizonBookmark` | string  | Secondary read marker in the same format.                                                                                                                            |
+| `lastimreceivedtime`         | string  | ISO 8601 timestamp of the most recent incoming message.                                                                                                              |
+| `isemptyconversation`        | string  | `"True"` or `"False"`.                                                                                                                                               |
+| `addedBy`                    | string  | MRI of the user who added the caller to this conversation.                                                                                                           |
+| `addedByTenantId`            | string  | Tenant ID of `addedBy`.                                                                                                                                              |
+| `draftVersion`               | integer | Version stamp of the caller's unsent draft, if one exists.                                                                                                           |
+| `meetingInfo`                | string  | JSON-encoded object with meeting metadata (e.g. `rsvpStatus`). Present on meeting threads.                                                                          |
+| `alerts`                     | string  | `"true"` or `"false"`.                                                                                                                                               |
+| `favorite`                   | string  | `"true"` or `"false"`.                                                                                                                                               |
+| `hasImpersonation`           | string  | `"True"` or `"False"`.                                                                                                                                               |
+| `pinnedindex`                | string  | Zero-based pin position. Present only when the conversation is pinned.                                                                                               |
+| `mute`                       | string  | JSON-encoded `{ "isMuted": boolean, "until": integer }`. Present only when notifications are muted.                                                                  |
 
 ### ThreadProperties
 
-| Key                   | Description                                                                                                                            |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `threadType`          | Internal thread classification (e.g. `chat`, `space`).                                                                                  |
-| `productThreadType`   | Surface classification. `OneToOneChat` for a federated 1:1; `Chat` for a group chat; `TopicThread` for a channel thread.                |
-| `topic`               | Group title. Empty for one-to-one threads.                                                                                              |
-| `createdat`           | Unix-millisecond creation timestamp.                                                                                                   |
-| `creator`             | MRI of the user who created the thread. `null` for federated one-to-one threads (`19:uni01_*`).                                        |
-| `memberCount`         | Number of participants, as a stringified integer. `null` for federated one-to-one threads.                                              |
-| `originalThreadId`    | Predecessor thread MRI when the thread was migrated; equal to `id` otherwise.                                                          |
-| `lastSequenceId`      | Sequence number of the last delivered message. See [`Message.sequenceId`](./messages.md#the-message-object).                            |
-| `version`             | Thread-metadata version stamp.                                                                                                         |
-| `rosterVersion`       | Membership-list version stamp.                                                                                                         |
-| `isStickyThread`      | `true` when the thread is system-pinned and cannot be deleted by participants.                                                         |
-| `isCreator`           | `true` when the caller created the thread.                                                                                             |
-| `gapDetectionEnabled` | `true` when the service emits sequence-gap notifications for this thread.                                                              |
-| `lastjoinat`          | Unix-millisecond timestamp at which the caller most recently joined.                                                                   |
-| `chatFilesIndexId`    | Identifier used to look up files attached anywhere in the thread.                                                                      |
+| Key                   | Type    | Description                                                                                                                            |
+| --------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `threadType`          | string  | Internal thread classification (e.g. `chat`, `space`, `streamofnotifications`).                                                       |
+| `productThreadType`   | string  | Surface classification. `OneToOneChat` for a federated 1:1; `Chat` for a group chat; `TopicThread` for a channel thread; `StreamOfNotifications` for system notification feeds. |
+| `topic`               | string  | Group title. Empty for one-to-one threads.                                                                                             |
+| `createdat`           | string  | Unix-millisecond creation timestamp, as a string.                                                                                      |
+| `creator`             | string  | MRI of the user who created the thread. `null` for federated one-to-one threads (`19:uni01_*`).                                        |
+| `memberCount`         | string  | Number of participants, as a stringified integer. `null` for federated one-to-one threads.                                             |
+| `originalThreadId`    | string  | Predecessor thread MRI when the thread was migrated; equal to `id` otherwise.                                                          |
+| `lastSequenceId`      | string  | Sequence number of the last delivered message, as a string. See [`Message.sequenceId`](./messages.md#the-message-object).              |
+| `version`             | string  | Thread-metadata version stamp (Unix milliseconds), as a string.                                                                        |
+| `rosterVersion`       | integer | Membership-list version stamp. Returned as a bare integer.                                                                             |
+| `lastjoinat`          | string  | Unix-millisecond timestamp at which the caller most recently joined, as a string.                                                      |
+| `isStickyThread`      | string  | `"true"` or `"false"`.                                                                                                                 |
+| `isCreator`           | boolean | `true` when the caller created the thread.                                                                                             |
+| `gapDetectionEnabled` | string  | `"True"` or `"False"`.                                                                                                                 |
+| `tenantid`            | string  | Tenant ID of the thread's home tenant.                                                                                                 |
+| `hidden`              | string  | `"true"` or `"false"`.                                                                                                                 |
+| `picture`             | string  | URL of the thread's avatar image.                                                                                                      |
+| `chatFilesIndexId`    | string  | Identifier used to look up files attached anywhere in the thread.                                                                      |
 
 ### MemberProperties
 
-| Key                    | Description                                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `role`                 | Caller's role (e.g. `User`, `Admin`).                                                                                |
-| `isReader`             | `true` when the caller has read-only access.                                                                         |
-| `memberExpirationTime` | Unix-millisecond timestamp when the caller's membership expires. `0` if non-expiring.                                |
-| `relationshipState`    | Federation state with the other party (e.g. `Allowed`).                                                              |
+| Key                    | Type    | Description                                                                                                          |
+| ---------------------- | ------- | -------------------------------------------------------------------------------------------------------------------- |
+| `role`                 | string  | Caller's role (e.g. `User`, `Admin`).                                                                                |
+| `isReader`             | boolean | `true` when the caller has read-only access.                                                                         |
+| `isIdentityMasked`     | boolean | `true` when the caller's identity is masked from other participants.                                                 |
+| `memberExpirationTime` | integer | Unix-millisecond timestamp when the caller's membership expires. `0` if non-expiring.                                |
+| `interest`             | string  | Caller's notification interest level (e.g. `Interested`).                                                           |
+| `relationshipState`    | object  | Federation relationship with the other party. Contains `inQuarantine` (boolean) and `hasImpersonation` (string).    |
 
 ---
 
