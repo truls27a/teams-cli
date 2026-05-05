@@ -19,6 +19,8 @@ var chatCmd = &cobra.Command{
 	Short: "Manage chats",
 }
 
+var listAll bool
+
 var chatListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List conversations",
@@ -31,15 +33,28 @@ var chatListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		if !listAll {
+			filtered := convs[:0]
+			for _, c := range convs {
+				if strings.HasPrefix(c.ID, "48:") || strings.HasPrefix(c.ID, "19:meeting_") {
+					continue
+				}
+				filtered = append(filtered, c)
+			}
+			convs = filtered
+		}
+
 		if jsonOutput {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(convs)
 		}
-		fmt.Printf("%-12s  %-10s  %s\n", "TYPE", "ID", "DISPLAY")
-		fmt.Println(strings.Repeat("-", 72))
+
+		fmt.Printf("%-30s  %-8s  %s\n", "NAME", "TYPE", "ID")
+		fmt.Println(strings.Repeat("-", 80))
 		for _, c := range convs {
-			fmt.Printf("%-12s  %-48s  %s\n", convType(c), c.ID, convDisplay(c))
+			fmt.Printf("%-30s  %-8s  %s\n", truncate(convDisplay(c), 30), convType(c), c.ID)
 		}
 		return nil
 	},
@@ -143,6 +158,7 @@ var chatSendCmd = &cobra.Command{
 }
 
 func init() {
+	chatListCmd.Flags().BoolVar(&listAll, "all", false, "include meeting threads and system feeds")
 	chatViewCmd.Flags().IntVarP(&viewLimit, "limit", "n", 20, "number of messages to show")
 	chatViewCmd.Flags().BoolVar(&viewAll, "all", false, "fetch all messages")
 	chatCmd.AddCommand(chatListCmd, chatViewCmd, chatSendCmd)
@@ -177,23 +193,30 @@ func renderContent(content, messagetype string) string {
 
 func convType(c teams.Conversation) string {
 	switch {
-	case strings.HasPrefix(c.ID, "8:orgid:"):
-		return "1:1"
-	case strings.HasPrefix(c.ID, "8:live:"):
-		return "1:1(ext)"
+	case strings.HasPrefix(c.ID, "8:orgid:"), strings.HasPrefix(c.ID, "8:live:"):
+		return "dm"
 	case strings.HasPrefix(c.ID, "48:bot:"):
-		return "Bot"
+		return "bot"
 	case c.ThreadProperties != nil:
 		switch c.ThreadProperties.ProductThreadType {
 		case "OneToOneChat":
-			return "1:1(fed)"
+			return "dm"
 		case "Chat":
-			return "Group"
+			return "group"
 		case "TopicThread":
-			return "Channel"
+			return "channel"
+		case "StreamOfNotifications":
+			return "feed"
 		}
 	}
-	return "?"
+	return "other"
+}
+
+func truncate(s string, n int) string {
+	if len([]rune(s)) <= n {
+		return s
+	}
+	return string([]rune(s)[:n-1]) + "…"
 }
 
 func convDisplay(c teams.Conversation) string {
