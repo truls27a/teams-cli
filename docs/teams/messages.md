@@ -1,6 +1,6 @@
 # Messages
 
-A Message is a single entry in a [Conversation](./conversations.md). The same collection supports listing existing messages and posting new ones.
+A Message is a single entry in a [chat](./chats.md). The same collection supports listing existing messages and posting new ones.
 
 ## The Message object
 

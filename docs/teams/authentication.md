@@ -1,22 +1,27 @@
 # Authentication
 
-The Teams API uses Skype-token authentication. Every request to the chat service must include an `Authentication` header containing a valid Skype JWT.
+The Teams API uses two credentials, each scoped to its service. The chat service accepts a Skype token; the chat-service aggregator (CSA) accepts an Azure AD bearer token whose audience is the aggregator. Both are derived from the same Microsoft identity-platform sign-in and from the same OAuth 2.0 refresh token; only the access-token request scope differs.
 
 ```http
 Authentication: skypetoken=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-The legacy form `X-Skypetoken: eyJ...` is also accepted.
+```http
+Authorization: Bearer eyJ0eXAi...
+```
 
-Requests without a valid token return [`401 Unauthorized`](./errors.md) with `errorCode: 911`.
+The legacy form `X-Skypetoken: eyJ...` is also accepted on the chat service.
 
-## Obtaining a token
+Requests without a valid token return [`401 Unauthorized`](./errors.md) with `errorCode: 911` (chat service) or a generic `401` (CSA).
 
-The Skype token is issued by the Teams "authsvc" endpoint in exchange for a Microsoft identity-platform access token. Three steps:
+## Obtaining tokens
 
-1. Acquire an Azure AD access token using the Microsoft identity platform.
-2. Exchange that token for a Skype token.
-3. Use the Skype token on every chat-service call.
+Four steps:
+
+1. Acquire an Azure AD access token using the Microsoft identity platform, with scope `https://api.spaces.skype.com/.default`.
+2. Exchange that token for a Skype token. Use the Skype token on every chat-service call.
+3. Using the same refresh token, acquire a second Azure AD access token with scope `https://chatsvcagg.teams.microsoft.com/.default`. Use it directly as `Authorization: Bearer` on every CSA call.
+4. Refresh each access token before its `expires_in` elapses; rotate the refresh token whenever the token endpoint returns a new one.
 
 ### Acquire an Azure AD access token
 
@@ -129,7 +134,37 @@ The request body is empty; `Content-Length: 0` is required.
 | `teamsDataBoundary`      | string  | Data-residency boundary the account is bound to (e.g. `eudb` for the EU Data Boundary).                      |
 | `isMultiGeo`             | boolean | Whether the tenant has multi-geo storage enabled.                                                            |
 
-The `regionGtms` map varies by region; do not hard-code service hostnames in client code beyond the bootstrap call to `/api/authsvc/v1.0/authz`.
+The `regionGtms` map varies by region; do not hard-code service hostnames in client code beyond the bootstrap call to `/api/authsvc/v1.0/authz`. The aggregator entry (`chatServiceAggregator`) is global and the same value for every account; its primary front, `https://teams.microsoft.com/api/csa/api`, is also stable and may be hard-coded.
+
+## Aggregator bearer token
+
+The CSA aggregator does not consume Skype tokens. It accepts an Azure AD access token whose audience is the aggregator service. Acquire one by re-using the refresh token returned by the device-code flow with a different scope:
+
+```http
+POST /<tenant>/oauth2/v2.0/token HTTP/1.1
+Host: login.microsoftonline.com
+Content-Type: application/x-www-form-urlencoded
+
+client_id=1fec8e78-bce4-4aaf-ab1b-5451cc387264
+&grant_type=refresh_token
+&refresh_token=0.AY...
+&scope=https%3A%2F%2Fchatsvcagg.teams.microsoft.com%2F.default
+```
+
+```json
+{
+  "token_type": "Bearer",
+  "scope": "https://chatsvcagg.teams.microsoft.com/.default",
+  "expires_in": 4499,
+  "ext_expires_in": 4499,
+  "access_token": "eyJ0eXAi...",
+  "refresh_token": "0.AY...."
+}
+```
+
+The same refresh token mints both the spaces-audience token (used for the Skype-token exchange) and the aggregator-audience token; multi-resource refresh is the default behaviour for public clients on the Microsoft identity platform. Replace the stored refresh token with the rotated value if one is returned.
+
+Requests issued with a token whose audience is `api.spaces.skype.com` against CSA, or vice-versa, are rejected with `401 Unauthorized`.
 
 ## Use the Skype token
 
@@ -141,6 +176,16 @@ BehaviorOverride: redirectAs404
 ```
 
 The header value is literally `skypetoken=<jwt>`, not `Bearer`. The legacy `X-Skypetoken: <jwt>` form is also accepted.
+
+## Use the aggregator bearer token
+
+```http
+GET /v1/teams/users/me?isPrefetch=false&enableMembershipSummary=true HTTP/1.1
+Host: teams.microsoft.com
+Authorization: Bearer eyJ0eXAi...
+```
+
+The aggregator does not require `BehaviorOverride` and does not accept `Authentication: skypetoken=`.
 
 ## User MRI
 
@@ -164,11 +209,12 @@ User-Agent:       <client identifier>
 
 ## Token lifetimes and refresh
 
-| Token       | Lifetime          | Refresh                                                                                                                                                                  |
-| ----------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| AAD access  | ~2 hours          | Re-call the token endpoint with `grant_type=refresh_token`.                                                                                                              |
-| Skype       | ~2 hours          | Re-call `POST /api/authsvc/v1.0/authz` with a current AAD access token.                                                                                                  |
-| AAD refresh | ~90 days, sliding | Rotated on every redemption. The response to a `grant_type=refresh_token` call carries a new `refresh_token` that supersedes the previous one. Persist the latest value. |
+| Token                   | Lifetime          | Refresh                                                                                                                                                                  |
+| ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AAD access (spaces aud) | ~2 hours          | Re-call the token endpoint with `grant_type=refresh_token` and `scope=https://api.spaces.skype.com/.default`.                                                            |
+| AAD access (CSA aud)    | ~75 minutes       | Re-call the token endpoint with `grant_type=refresh_token` and `scope=https://chatsvcagg.teams.microsoft.com/.default`. The CSA token is used directly; no exchange step. |
+| Skype                   | ~2 hours          | Re-call `POST /api/authsvc/v1.0/authz` with a current spaces-audience AAD access token.                                                                                  |
+| AAD refresh             | ~90 days, sliding | Rotated on every redemption against either scope. The response carries a new `refresh_token` that supersedes the previous one. Persist the latest value.                |
 
 To refresh the access token:
 
@@ -185,7 +231,7 @@ client_id=1fec8e78-bce4-4aaf-ab1b-5451cc387264
 
 The response shape is identical to the device-code token response. Replace the stored refresh token with the new one before the next refresh.
 
-On `401 errorCode 911`, refresh the Skype token once and retry. On a second `401`, refresh the AAD access token (and the refresh token if expired) and retry. If both fail, re-run the device-code flow.
+On chat-service `401 errorCode 911`, refresh the Skype token once and retry. On a second `401`, refresh the spaces-audience AAD access token (and the refresh token if expired) and retry. On CSA `401`, refresh the CSA-audience AAD access token and retry. If refresh fails on either path, re-run the device-code flow.
 
 ## Conditional Access
 
