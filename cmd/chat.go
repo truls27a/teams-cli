@@ -23,26 +23,26 @@ var listAll bool
 
 var chatListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List conversations",
+	Short: "List chats",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := loadClient()
 		if err != nil {
 			return err
 		}
-		convs, err := client.ListConversations(context.Background(), 100)
+		chats, err := client.ListChats(context.Background())
 		if err != nil {
 			return err
 		}
 
 		if !listAll {
-			filtered := convs[:0]
-			for _, c := range convs {
-				if strings.HasPrefix(c.ID, "48:") || strings.HasPrefix(c.ID, "19:meeting_") {
+			filtered := chats[:0]
+			for _, c := range chats {
+				if strings.HasPrefix(c.ID, "19:meeting_") {
 					continue
 				}
 				filtered = append(filtered, c)
 			}
-			convs = filtered
+			chats = filtered
 		}
 
 		if jsonOutput {
@@ -51,9 +51,9 @@ var chatListCmd = &cobra.Command{
 				Type string `json:"type"`
 				ID   string `json:"id"`
 			}
-			out := make([]item, 0, len(convs))
-			for _, c := range convs {
-				out = append(out, item{convDisplay(c), convType(c), c.ID})
+			out := make([]item, 0, len(chats))
+			for _, c := range chats {
+				out = append(out, item{chatDisplay(c, client.SelfMRI), chatType(c), c.ID})
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -62,8 +62,8 @@ var chatListCmd = &cobra.Command{
 
 		fmt.Printf("%-30s  %-8s  %s\n", "NAME", "TYPE", "ID")
 		fmt.Println(strings.Repeat("-", 80))
-		for _, c := range convs {
-			fmt.Printf("%-30s  %-8s  %s\n", truncate(convDisplay(c), 30), convType(c), c.ID)
+		for _, c := range chats {
+			fmt.Printf("%-30s  %-8s  %s\n", truncate(chatDisplay(c, client.SelfMRI), 30), chatType(c), c.ID)
 		}
 		return nil
 	},
@@ -269,23 +269,14 @@ func renderContent(content, messagetype string) string {
 	return strings.TrimSpace(content)
 }
 
-func convType(c teams.Conversation) string {
+func chatType(c teams.Chat) string {
 	switch {
-	case strings.HasPrefix(c.ID, "8:orgid:"), strings.HasPrefix(c.ID, "8:live:"):
+	case c.ChatType == "meeting":
+		return "meeting"
+	case c.IsOneOnOne:
 		return "dm"
-	case strings.HasPrefix(c.ID, "48:bot:"):
-		return "bot"
-	case c.ThreadProperties != nil:
-		switch c.ThreadProperties.ProductThreadType {
-		case "OneToOneChat":
-			return "dm"
-		case "Chat":
-			return "group"
-		case "TopicThread":
-			return "channel"
-		case "StreamOfNotifications":
-			return "feed"
-		}
+	case c.ChatType == "chat":
+		return "group"
 	}
 	return "other"
 }
@@ -297,12 +288,40 @@ func truncate(s string, n int) string {
 	return string([]rune(s)[:n-1]) + "…"
 }
 
-func convDisplay(c teams.Conversation) string {
-	if c.ThreadProperties != nil && c.ThreadProperties.Topic != "" {
-		return c.ThreadProperties.Topic
+func chatDisplay(c teams.Chat, selfMRI string) string {
+	if c.Title != nil && *c.Title != "" {
+		return *c.Title
 	}
-	if c.LastMessage != nil && c.LastMessage.IMDisplayName != "" {
+	if c.MeetingInformation != nil && c.MeetingInformation.Subject != "" {
+		return c.MeetingInformation.Subject
+	}
+	var names []string
+	for _, m := range c.Members {
+		if m.MRI == selfMRI || m.FriendlyName == "" {
+			continue
+		}
+		names = append(names, m.FriendlyName)
+	}
+	switch {
+	case len(names) == 0:
+	case len(names) <= 3:
+		return strings.Join(names, ", ")
+	default:
+		return fmt.Sprintf("%s, %s, %s +%d", names[0], names[1], names[2], len(names)-3)
+	}
+	if c.LastMessage != nil && !c.IsLastMessageFromMe && c.LastMessage.IMDisplayName != "" {
 		return c.LastMessage.IMDisplayName
 	}
-	return ""
+	switch chatType(c) {
+	case "dm":
+		return "Direct chat"
+	case "meeting":
+		return "Meeting chat"
+	case "group":
+		if n := len(c.Members); n > 0 {
+			return fmt.Sprintf("Group chat (%d people)", n)
+		}
+		return "Group chat"
+	}
+	return "Conversation"
 }

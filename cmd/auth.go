@@ -13,12 +13,16 @@ import (
 )
 
 type storedAuth struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	SkypeToken   string    `json:"skype_token"`
-	Expiry       time.Time `json:"expiry"`
-	SkypeExpiry  time.Time `json:"skype_expiry"`
-	BaseURL      string    `json:"base_url"`
+	RefreshToken string `json:"refresh_token"`
+
+	SkypeToken       string    `json:"skype_token"`
+	SkypeExpiry      time.Time `json:"skype_expiry"`
+	MessagingBaseURL string    `json:"messaging_base_url"`
+
+	CSAToken  string    `json:"csa_token"`
+	CSAExpiry time.Time `json:"csa_expiry"`
+
+	SelfMRI string `json:"self_mri"`
 }
 
 func authPath() string {
@@ -44,6 +48,20 @@ func saveAuth(a *storedAuth) error {
 	return os.WriteFile(path, b, 0600)
 }
 
+func resolveSelfMRI(csaToken, skypeToken string) string {
+	if claims, err := teams.DecodeJWTClaims(csaToken); err == nil {
+		if oid, ok := claims["oid"].(string); ok && oid != "" {
+			return "8:orgid:" + oid
+		}
+	}
+	if claims, err := teams.DecodeJWTClaims(skypeToken); err == nil {
+		if id, ok := claims["skypeid"].(string); ok && id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
 func loadClient() (*teams.Client, error) {
 	a, err := loadAuth()
 	if os.IsNotExist(err) {
@@ -52,7 +70,49 @@ func loadClient() (*teams.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return teams.NewClient(a.BaseURL, a.SkypeToken), nil
+
+	now := time.Now()
+	dirty := false
+
+	if a.SkypeExpiry.Before(now.Add(60 * time.Second)) {
+		tok, err := teams.RefreshAccessToken(a.RefreshToken, teams.SkypeScope)
+		if err != nil {
+			return nil, fmt.Errorf("refresh skype token: %w (run: teams auth login)", err)
+		}
+		skype, err := teams.ExchangeSkypeToken(tok.AccessToken)
+		if err != nil {
+			return nil, err
+		}
+		if tok.RefreshToken != "" {
+			a.RefreshToken = tok.RefreshToken
+		}
+		a.SkypeToken = skype.SkypeToken
+		a.SkypeExpiry = now.Add(time.Duration(skype.ExpiresIn) * time.Second)
+		a.MessagingBaseURL = skype.BaseURL
+		dirty = true
+	}
+
+	if a.CSAExpiry.Before(now.Add(60 * time.Second)) {
+		tok, err := teams.RefreshAccessToken(a.RefreshToken, teams.CSAScope)
+		if err != nil {
+			return nil, fmt.Errorf("refresh chatsvcagg token: %w (run: teams auth login)", err)
+		}
+		if tok.RefreshToken != "" {
+			a.RefreshToken = tok.RefreshToken
+		}
+		a.CSAToken = tok.AccessToken
+		a.CSAExpiry = now.Add(time.Duration(tok.ExpiresIn) * time.Second)
+		if a.SelfMRI == "" {
+			a.SelfMRI = resolveSelfMRI(a.CSAToken, a.SkypeToken)
+		}
+		dirty = true
+	}
+
+	if dirty {
+		_ = saveAuth(a)
+	}
+
+	return teams.NewClient(a.MessagingBaseURL, a.SkypeToken, a.CSAToken, a.SelfMRI), nil
 }
 
 var authCmd = &cobra.Command{
@@ -78,13 +138,23 @@ var authLoginCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		csa, err := teams.RefreshAccessToken(tok.RefreshToken, teams.CSAScope)
+		if err != nil {
+			return fmt.Errorf("mint chatsvcagg token: %w", err)
+		}
+		refresh := tok.RefreshToken
+		if csa.RefreshToken != "" {
+			refresh = csa.RefreshToken
+		}
+		now := time.Now()
 		return saveAuth(&storedAuth{
-			AccessToken:  tok.AccessToken,
-			RefreshToken: tok.RefreshToken,
-			Expiry:       time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second),
-			SkypeToken:   skype.SkypeToken,
-			SkypeExpiry:  time.Now().Add(time.Duration(skype.ExpiresIn) * time.Second),
-			BaseURL:      skype.BaseURL,
+			RefreshToken:     refresh,
+			SkypeToken:       skype.SkypeToken,
+			SkypeExpiry:      now.Add(time.Duration(skype.ExpiresIn) * time.Second),
+			MessagingBaseURL: skype.BaseURL,
+			CSAToken:         csa.AccessToken,
+			CSAExpiry:        now.Add(time.Duration(csa.ExpiresIn) * time.Second),
+			SelfMRI:          resolveSelfMRI(csa.AccessToken, skype.SkypeToken),
 		})
 	},
 }
@@ -112,15 +182,17 @@ var authStatusCmd = &cobra.Command{
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(struct {
-				LoggedIn    bool      `json:"logged_in"`
-				TokenExpiry time.Time `json:"token_expiry"`
-				SkypeExpiry time.Time `json:"skype_expiry"`
-				Region      string    `json:"region"`
-			}{true, a.Expiry, a.SkypeExpiry, a.BaseURL})
+				LoggedIn         bool      `json:"logged_in"`
+				SkypeExpiry      time.Time `json:"skype_expiry"`
+				CSAExpiry        time.Time `json:"csa_expiry"`
+				MessagingBaseURL string    `json:"messaging_base_url"`
+				SelfMRI          string    `json:"self_mri"`
+			}{true, a.SkypeExpiry, a.CSAExpiry, a.MessagingBaseURL, a.SelfMRI})
 		}
-		fmt.Printf("Token expiry: %s\n", a.Expiry.Format(time.RFC3339))
-		fmt.Printf("Skype expiry: %s\n", a.SkypeExpiry.Format(time.RFC3339))
-		fmt.Printf("Region:       %s\n", a.BaseURL)
+		fmt.Printf("Skype expiry:        %s\n", a.SkypeExpiry.Format(time.RFC3339))
+		fmt.Printf("CSA expiry:          %s\n", a.CSAExpiry.Format(time.RFC3339))
+		fmt.Printf("Messaging base URL:  %s\n", a.MessagingBaseURL)
+		fmt.Printf("Self MRI:            %s\n", a.SelfMRI)
 		return nil
 	},
 }

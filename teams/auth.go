@@ -2,6 +2,7 @@ package teams
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,9 +13,11 @@ import (
 )
 
 const (
-	ClientID = "1fec8e78-bce4-4aaf-ab1b-5451cc387264"
-	Scope    = "https://api.spaces.skype.com/.default offline_access"
-	tenant   = "organizations"
+	ClientID    = "1fec8e78-bce4-4aaf-ab1b-5451cc387264"
+	SkypeScope  = "https://api.spaces.skype.com/.default offline_access"
+	CSAScope    = "https://chatsvcagg.teams.microsoft.com/.default offline_access"
+	CSABaseURL  = "https://teams.microsoft.com/api/csa/api"
+	tenant      = "organizations"
 )
 
 type DeviceCodeInfo struct {
@@ -40,7 +43,7 @@ type SkypeAuth struct {
 func RequestDeviceCode(ctx context.Context) (*DeviceCodeInfo, error) {
 	resp, err := http.PostForm(
 		fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/devicecode", tenant),
-		url.Values{"client_id": {ClientID}, "scope": {Scope}},
+		url.Values{"client_id": {ClientID}, "scope": {SkypeScope}},
 	)
 	if err != nil {
 		return nil, err
@@ -128,14 +131,14 @@ func ExchangeSkypeToken(accessToken string) (*SkypeAuth, error) {
 	}, nil
 }
 
-func RefreshAccessToken(refreshToken string) (*Tokens, error) {
+func RefreshAccessToken(refreshToken, scope string) (*Tokens, error) {
 	resp, err := http.PostForm(
 		fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", tenant),
 		url.Values{
 			"client_id":     {ClientID},
 			"grant_type":    {"refresh_token"},
 			"refresh_token": {refreshToken},
-			"scope":         {Scope},
+			"scope":         {scope},
 		},
 	)
 	if err != nil {
@@ -154,4 +157,20 @@ func RefreshAccessToken(refreshToken string) (*Tokens, error) {
 		return nil, fmt.Errorf("refresh error: %s", tok.Error)
 	}
 	return &tok.Tokens, nil
+}
+
+func DecodeJWTClaims(token string) (map[string]any, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("not a JWT")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }

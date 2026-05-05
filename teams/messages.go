@@ -55,7 +55,7 @@ func (c *Client) ListMessages(ctx context.Context, conversationID string, pageSi
 	path := fmt.Sprintf("/v1/users/ME/conversations/%s/messages?pageSize=%d&view=msnp24Equivalent",
 		url.PathEscape(conversationID), pageSize)
 	var resp listMessagesResponse
-	if err := c.do(ctx, "GET", path, nil, &resp); err != nil {
+	if err := c.doMessaging(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, "", err
 	}
 	return resp.Messages, resp.Metadata.SyncState, nil
@@ -63,7 +63,7 @@ func (c *Client) ListMessages(ctx context.Context, conversationID string, pageSi
 
 func (c *Client) ListMessagesPage(ctx context.Context, syncStateURL string) ([]Message, string, error) {
 	var resp listMessagesResponse
-	if err := c.do(ctx, "GET", syncStateURL, nil, &resp); err != nil {
+	if err := c.doMessaging(ctx, "GET", syncStateURL, nil, &resp); err != nil {
 		return nil, "", err
 	}
 	return resp.Messages, resp.Metadata.SyncState, nil
@@ -72,7 +72,7 @@ func (c *Client) ListMessagesPage(ctx context.Context, syncStateURL string) ([]M
 func (c *Client) SendMessage(ctx context.Context, conversationID string, req SendMessageRequest) (*SendMessageResponse, error) {
 	path := "/v1/users/ME/conversations/" + url.PathEscape(conversationID) + "/messages"
 	var resp SendMessageResponse
-	if err := c.do(ctx, "POST", path, req, &resp); err != nil {
+	if err := c.doMessaging(ctx, "POST", path, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
