@@ -1,6 +1,6 @@
 # Errors
 
-The consumer Teams API uses conventional HTTP status codes to indicate the success or failure of a request.
+The Teams API uses conventional HTTP status codes to indicate the success or failure of a request.
 
 | Code                      | Meaning                                                                                                                              |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -35,7 +35,7 @@ Chat-service error responses are JSON objects:
 
 Branch on `errorCode`. `message` is a human-readable description intended for logs. `standardizedError.errorCode` is always identical to the top-level `errorCode`.
 
-The middle tier (`/api/mt/...`) and authz endpoint (`/api/auth/...`) use a different envelope:
+The middle tier (`/api/mt/...`) and authsvc endpoint (`/api/authsvc/...`) use a different envelope:
 
 ```json
 {
@@ -50,7 +50,7 @@ Branch on `value.code`.
 
 | `errorCode` |  HTTP | Description                                                                                                                                                  |
 | ----------: | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-|       `911` | `401` | Skype token missing, expired, or revoked. Refresh via [`POST /api/auth/v1.0/authz/consumer`](./authentication.md#exchange-for-a-skype-token) and retry once. |
+|       `911` | `401` | Skype token missing, expired, or revoked. Refresh via [`POST /api/authsvc/v1.0/authz`](./authentication.md#exchange-for-a-skype-token) and retry once. |
 |       `912` | `401` | Skype token signed for a different region. Re-issue against the correct region.                                                                              |
 |      `1000` | `400` | Generic validation failure. Inspect `message`.                                                                                                               |
 |      `1003` | `400` | Body too large.                                                                                                                                              |
@@ -65,30 +65,53 @@ Branch on `value.code`.
 
 ## Identity-platform error codes
 
-Returned by the Microsoft identity platform token endpoint (`/oauth2/v2.0/token`) and the device-code endpoint (`/oauth2/v2.0/devicecode`). The envelope is `{ "error": "<code>", "error_description": "<text>", "error_codes": [<int>], "timestamp": "<iso>", "trace_id": "<guid>", "correlation_id": "<guid>" }`.
+Returned by the Microsoft identity platform token endpoint (`/oauth2/v2.0/token`) and the device-code endpoint (`/oauth2/v2.0/devicecode`). The envelope is:
 
-| `error`                  |  HTTP | Description                                                                                                                                              |
-| ------------------------ | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `authorization_pending`  | `400` | Returned by the token endpoint while polling a device-code grant. The user has not yet completed sign-in. Continue polling at `interval` seconds.        |
-| `slow_down`              | `400` | Polling too aggressively. Increase the polling interval by 5 seconds.                                                                                    |
-| `expired_token`          | `400` | The device code expired before the user signed in. Restart the device-code flow.                                                                         |
-| `authorization_declined` | `400` | The user explicitly rejected consent. Surface to the caller; do not retry.                                                                               |
-| `invalid_grant`          | `400` | The refresh token has been revoked or has expired. Restart the device-code flow.                                                                         |
-| `invalid_client`         | `401` | The `client_id` is wrong.                                                                                                                                |
-| `unauthorized_client`    | `400` | The client is not configured for the requested grant type. Should not occur with the Teams Live client and device code, which is verified to be allowed. |
-| `invalid_scope`          | `400` | The `scope` value is malformed or unrecognised.                                                                                                          |
+```json
+{
+  "error": "<code>",
+  "error_description": "<text>",
+  "error_codes": [<int>],
+  "timestamp": "<iso>",
+  "trace_id": "<guid>",
+  "correlation_id": "<guid>"
+}
+```
 
-## Authz error codes
+| `error`                  |  HTTP | Description                                                                                                                                |
+| ------------------------ | ----: | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `authorization_pending`  | `400` | Returned by the token endpoint while polling a device-code grant. The user has not yet completed sign-in. Continue polling at `interval` seconds. |
+| `slow_down`              | `400` | Polling too aggressively. Increase the polling interval by 5 seconds.                                                                      |
+| `expired_token`          | `400` | The device code expired before the user signed in. Restart the device-code flow.                                                           |
+| `authorization_declined` | `400` | The user explicitly rejected consent. Surface to the caller; do not retry.                                                                  |
+| `invalid_grant`          | `400` | The refresh token has been revoked or has expired. Restart the device-code flow.                                                            |
+| `invalid_client`         | `401` | The `client_id` is wrong, or the client is registered as a confidential client and was used without a `client_secret` / `client_assertion`. |
+| `unauthorized_client`    | `400` | The client is not configured for the requested grant type.                                                                                  |
+| `invalid_scope`          | `400` | The `scope` value is malformed or unrecognised.                                                                                             |
+| `interaction_required`   | `400` | A Conditional Access policy requires user interaction (e.g. MFA, device-compliance). Inspect `error_codes` for the specific signal.        |
 
-Returned by `POST /api/auth/v1.0/authz/consumer`.
+Common values inside `error_codes`:
 
-| `value.code`           |  HTTP | Description                                                                                                                                                        |
-| ---------------------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AuthFailure`          | `401` | The MSA access token is invalid or expired. Refresh via the token endpoint and retry.                                                                              |
-| `AuthFailure.Audience` | `401` | The MSA access token's `aud` claim is wrong for this audience. The scope on the access-token request must be exactly `service::api.fl.spaces.skype.com::MBI_SSL`.  |
-| `Forbidden`            | `403` | The signed-in account is a work or school account; consumer endpoints are unavailable. `skypeToken.isBusinessTenant` would be `true` if the exchange were allowed. |
-| `Throttled`            | `429` | Token-exchange rate exceeded.                                                                                                                                      |
-| `InternalError`        | `500` | Transient backend error.                                                                                                                                           |
+| Code      | Meaning                                                                          |
+| --------- | -------------------------------------------------------------------------------- |
+| `50076`   | MFA required.                                                                    |
+| `50158`   | External security challenge required (e.g. risk-based sign-in).                  |
+| `53000`   | Device is not compliant with Conditional Access requirements.                     |
+| `53003`   | Access blocked by Conditional Access policy.                                      |
+| `65001`   | The user or admin has not consented to use the application.                       |
+| `7000218` | The client requires `client_assertion` or `client_secret` (confidential client). |
+
+## Authsvc error codes
+
+Returned by `POST /api/authsvc/v1.0/authz`.
+
+| `value.code`           |  HTTP | Description                                                                                                |
+| ---------------------- | ----: | ---------------------------------------------------------------------------------------------------------- |
+| `AuthFailure`          | `401` | The AAD access token is invalid or expired. Refresh via the token endpoint and retry.                       |
+| `AuthFailure.Audience` | `401` | The AAD access token's `aud` claim is wrong for this audience. The scope on the access-token request must include `https://api.spaces.skype.com/.default`. |
+| `Forbidden`            | `403` | The caller is not licensed for Teams in this tenant, or a tenant policy blocks the chat fabric.             |
+| `Throttled`            | `429` | Token-exchange rate exceeded.                                                                              |
+| `InternalError`        | `500` | Transient backend error.                                                                                   |
 
 ## Rate limiting
 

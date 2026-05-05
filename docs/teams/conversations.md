@@ -1,76 +1,78 @@
 # Conversations
 
-A Conversation represents a thread of messages between two or more participants. The same data model covers one-to-one chats, federated one-to-one chats, and group threads; they are distinguished by the prefix of the conversation MRI and by `threadProperties.productThreadType`.
+A Conversation represents a thread of messages between two or more participants. The same data model covers one-to-one chats, federated one-to-one chats with external organisations or consumer Microsoft accounts, group chats, and channel threads. They are distinguished by the prefix of the conversation MRI and by `threadProperties.productThreadType`.
 
 ## The Conversation object
 
 ### Common attributes
 
-| Field                       | Type                                                | Description                                                                                                                                               |
-| --------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | string                                              | The conversation MRI. See [Identifying conversations](#identifying-conversations).                                                                        |
-| `type`                      | string                                              | Always `Conversation`.                                                                                                                                    |
-| `targetLink`                | string                                              | Self-link to the conversation resource.                                                                                                                   |
-| `messages`                  | string                                              | Absolute URL of the conversation's message collection.                                                                                                    |
-| `version`                   | integer                                             | Server-side version stamp (Unix milliseconds), bumped on every server-side mutation.                                                                      |
-| `lastUpdatedMessageId`      | string                                              | `id` of the most recently delivered or mutated message.                                                                                                   |
-| `lastUpdatedMessageVersion` | integer                                             | `version` of that message.                                                                                                                                |
-| `lastRcMetadataVersion`     | integer                                             | Version stamp on the conversation's roster / control metadata.                                                                                            |
-| `lastMessage`               | [Message](./messages.md#the-message-object) \| null | The most recent message in the conversation, or `null` for empty threads. The embedded message also carries a `sequenceId` and a `clientmessageid` echo.  |
-| `properties`                | [ConversationProperties](#conversationproperties)   | Per-conversation metadata.                                                                                                                                |
-| `threadProperties`          | [ThreadProperties](#threadproperties) \| null       | Per-thread metadata. Present for every `19:` MRI, including federated one-to-one chats. `null` only for native one-to-one chats whose `id` is a user MRI. |
-| `memberProperties`          | [MemberProperties](#memberproperties)               | Per-caller membership state for this thread.                                                                                                              |
+| Field                       | Type                                                | Description                                                                                                                                                  |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                        | string                                              | The conversation MRI. See [Identifying conversations](#identifying-conversations).                                                                           |
+| `type`                      | string                                              | Always `Conversation`.                                                                                                                                       |
+| `targetLink`                | string                                              | Self-link to the conversation resource.                                                                                                                      |
+| `messages`                  | string                                              | Absolute URL of the conversation's message collection.                                                                                                       |
+| `version`                   | integer                                             | Server-side version stamp (Unix milliseconds), bumped on every server-side mutation.                                                                         |
+| `lastUpdatedMessageId`      | string                                              | `id` of the most recently delivered or mutated message.                                                                                                      |
+| `lastUpdatedMessageVersion` | integer                                             | `version` of that message.                                                                                                                                   |
+| `lastRcMetadataVersion`     | integer                                             | Version stamp on the conversation's roster / control metadata.                                                                                               |
+| `lastMessage`               | [Message](./messages.md#the-message-object) \| null | The most recent message in the conversation, or `null` for empty threads. The embedded message also carries a `sequenceId` and a `clientmessageid` echo.     |
+| `properties`                | [ConversationProperties](#conversationproperties)   | Per-conversation metadata.                                                                                                                                   |
+| `threadProperties`          | [ThreadProperties](#threadproperties) \| null       | Per-thread metadata. Present for every `19:` MRI, including federated one-to-one chats.                                                                      |
+| `memberProperties`          | [MemberProperties](#memberproperties)               | Per-caller membership state for this thread.                                                                                                                 |
 
 ### Identifying conversations
 
-| Prefix     | Conversation kind                                                                                                                                                            | Example                   |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| `8:live:`  | Native one-to-one with another personal Microsoft account. `id` is the other participant's user MRI; `threadProperties` is `null`.                                           | `8:live:exampleuser`      |
-| `8:orgid:` | Native one-to-one with a federated work or school account, when both parties are on the consumer chat fabric. Rare; most federated chats are realised as `19:` threads.      | `8:orgid:<guid>`          |
-| `19:`      | Thread. Used for group chats _and_ for federated one-to-one chats. Distinguish by `threadProperties.productThreadType` (`OneToOneChat` for federated 1:1, `Chat` for group). | `19:abcd…@unq.gbl.spaces` |
-| `48:bot:`  | One-to-one with a bot.                                                                                                                                                       | `48:bot:...`              |
+| Prefix     | Conversation kind                                                                                                                                                            | Example                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `8:orgid:` | Native one-to-one with another user in the caller's tenant. `id` is the other participant's user MRI; `threadProperties` is `null`.                                         | `8:orgid:<guid>`              |
+| `8:live:`  | Native one-to-one with a personal Microsoft account on the consumer chat fabric. Rare; most cross-fabric chats are realised as `19:` threads.                                | `8:live:<id>`                 |
+| `19:`      | Thread. Used for group chats, channel threads, and federated one-to-one chats. Distinguish by `threadProperties.productThreadType` (`OneToOneChat` for federated 1:1, `Chat` for group, `TopicThread` for channel posts). | `19:abcd0123…@thread.v2`      |
+| `48:bot:`  | One-to-one with a bot.                                                                                                                                                       | `48:bot:...`                  |
+
+The `19:` thread MRI suffix encodes the thread fabric: `@thread.v2` for cross-tenant or modern threads, `@thread.skype` for legacy group chats, and `@thread.tacv2` for Teams channel posts.
 
 ### ConversationProperties
 
 A string-to-string map. Common entries:
 
-| Key                   | Description                                                                                                                                                           |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `consumptionhorizon`  | Read marker, formatted as `<lastReadMessageId>;<lastReadArrivalMs>;<lastSentByMeArrivalMs>`. Updated via [Mark a conversation as read](#mark-a-conversation-as-read). |
-| `lastimreceivedtime`  | Unix-millisecond timestamp of the most recent incoming message.                                                                                                       |
-| `isemptyconversation` | `"true"` or `"false"`.                                                                                                                                                |
-| `pinnedindex`         | Zero-based pin position. Present only when the conversation is pinned.                                                                                                |
-| `mute`                | JSON-encoded `{ "isMuted": boolean, "until": integer }`. Present only when notifications are muted.                                                                   |
-| `userTileId`          | Opaque tile identifier for the contact card.                                                                                                                          |
+| Key                    | Description                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `consumptionhorizon`   | Read marker, formatted as `<lastReadMessageId>;<lastReadArrivalMs>;<lastSentByMeArrivalMs>`. Updated via [Mark a conversation as read](#mark-a-conversation-as-read). |
+| `lastimreceivedtime`   | Unix-millisecond timestamp of the most recent incoming message.                                                                                                      |
+| `isemptyconversation`  | `"true"` or `"false"`.                                                                                                                                               |
+| `pinnedindex`          | Zero-based pin position. Present only when the conversation is pinned.                                                                                               |
+| `mute`                 | JSON-encoded `{ "isMuted": boolean, "until": integer }`. Present only when notifications are muted.                                                                  |
+| `userTileId`           | Opaque tile identifier for the contact card.                                                                                                                         |
 
 ### ThreadProperties
 
-| Key                   | Description                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `threadType`          | Internal thread classification (e.g. `chat`, `space`).                                                       |
-| `productThreadType`   | Surface classification. `OneToOneChat` for a federated 1:1; `Chat` for a group chat.                         |
-| `topic`               | Group title. Empty for federated 1:1.                                                                        |
-| `createdat`           | Unix-millisecond creation timestamp.                                                                         |
-| `creator`             | MRI of the user who created the thread.                                                                      |
-| `memberCount`         | Number of participants, as a stringified integer. Absent for federated 1:1.                                  |
-| `originalThreadId`    | Predecessor thread MRI when the thread was migrated; equal to `id` otherwise.                                |
-| `lastSequenceId`      | Sequence number of the last delivered message. See [`Message.sequenceId`](./messages.md#the-message-object). |
-| `version`             | Thread-metadata version stamp.                                                                               |
-| `rosterVersion`       | Membership-list version stamp.                                                                               |
-| `isStickyThread`      | `true` when the thread is system-pinned and cannot be deleted by participants.                               |
-| `isCreator`           | `true` when the caller created the thread.                                                                   |
-| `gapDetectionEnabled` | `true` when the service emits sequence-gap notifications for this thread.                                    |
-| `lastjoinat`          | Unix-millisecond timestamp at which the caller most recently joined.                                         |
-| `chatFilesIndexId`    | Identifier used to look up files attached anywhere in the thread.                                            |
+| Key                   | Description                                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `threadType`          | Internal thread classification (e.g. `chat`, `space`).                                                                                  |
+| `productThreadType`   | Surface classification. `OneToOneChat` for a federated 1:1; `Chat` for a group chat; `TopicThread` for a channel thread.                |
+| `topic`               | Group title. Empty for one-to-one threads.                                                                                              |
+| `createdat`           | Unix-millisecond creation timestamp.                                                                                                   |
+| `creator`             | MRI of the user who created the thread.                                                                                                |
+| `memberCount`         | Number of participants, as a stringified integer. `null` for federated one-to-one threads.                                              |
+| `originalThreadId`    | Predecessor thread MRI when the thread was migrated; equal to `id` otherwise.                                                          |
+| `lastSequenceId`      | Sequence number of the last delivered message. See [`Message.sequenceId`](./messages.md#the-message-object).                            |
+| `version`             | Thread-metadata version stamp.                                                                                                         |
+| `rosterVersion`       | Membership-list version stamp.                                                                                                         |
+| `isStickyThread`      | `true` when the thread is system-pinned and cannot be deleted by participants.                                                         |
+| `isCreator`           | `true` when the caller created the thread.                                                                                             |
+| `gapDetectionEnabled` | `true` when the service emits sequence-gap notifications for this thread.                                                              |
+| `lastjoinat`          | Unix-millisecond timestamp at which the caller most recently joined.                                                                   |
+| `chatFilesIndexId`    | Identifier used to look up files attached anywhere in the thread.                                                                      |
 
 ### MemberProperties
 
-| Key                    | Description                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------- |
-| `role`                 | Caller's role (e.g. `User`, `Admin`).                                                 |
-| `isReader`             | `true` when the caller has read-only access.                                          |
-| `memberExpirationTime` | Unix-millisecond timestamp when the caller's membership expires. `0` if non-expiring. |
-| `relationshipState`    | Federation state with the other party (e.g. `Allowed`).                               |
+| Key                    | Description                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `role`                 | Caller's role (e.g. `User`, `Admin`).                                                                                |
+| `isReader`             | `true` when the caller has read-only access.                                                                         |
+| `memberExpirationTime` | Unix-millisecond timestamp when the caller's membership expires. `0` if non-expiring.                                |
+| `relationshipState`    | Federation state with the other party (e.g. `Allowed`).                                                              |
 
 ---
 
@@ -98,12 +100,10 @@ An object with a `conversations` array and a `_metadata` object containing the p
 
 ```json
 {
-  "conversations": [
-    /* Conversation objects */
-  ],
+  "conversations": [ /* Conversation objects */ ],
   "_metadata": {
     "totalCount": 30,
-    "syncState": "https://msgapi.teams.live.com/v1/users/ME/conversations?cursor=..."
+    "syncState": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations?cursor=..."
   }
 }
 ```
@@ -114,7 +114,7 @@ To page backward, re-issue the request as `GET <syncState>` unmodified until the
 
 ```http
 GET /v1/users/ME/conversations?pageSize=30&view=msnp24Equivalent HTTP/1.1
-Host: msgapi.teams.live.com
+Host: emea.ng.msg.teams.microsoft.com
 Authentication: skypetoken=eyJhbGci...
 BehaviorOverride: redirectAs404
 ```
@@ -125,10 +125,10 @@ BehaviorOverride: redirectAs404
 {
   "conversations": [
     {
-      "id": "19:abcd0123…@unq.gbl.spaces",
+      "id": "19:abcd0123…@thread.v2",
       "type": "Conversation",
-      "targetLink": "https://msgapi.teams.live.com/v1/users/ME/conversations/19:abcd0123…@unq.gbl.spaces",
-      "messages": "https://msgapi.teams.live.com/v1/users/ME/conversations/19:abcd0123…@unq.gbl.spaces/messages",
+      "targetLink": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations/19:abcd0123…@thread.v2",
+      "messages": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations/19:abcd0123…@thread.v2/messages",
       "version": 1715842456893,
       "lastUpdatedMessageId": "1715842456893",
       "lastUpdatedMessageVersion": 1715842456893,
@@ -139,15 +139,15 @@ BehaviorOverride: redirectAs404
         "type": "Message",
         "messagetype": "RichText/Html",
         "contenttype": "Text",
-        "from": "https://msgapi.teams.live.com/v1/users/ME/contacts/8:orgid:0000aaaa-…",
+        "from": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/contacts/8:orgid:00000000-0000-0000-0000-000000000000",
         "imdisplayname": "Other Person",
         "clientmessageid": "8472635198472635",
         "content": "<p>ok sounds good</p>",
         "composetime": "2026-05-04T07:04:11.213Z",
         "originalarrivaltime": "2026-05-04T07:04:11.213Z",
         "version": "1715842456893",
-        "conversationid": "19:abcd0123…@unq.gbl.spaces",
-        "conversationLink": "https://msgapi.teams.live.com/v1/users/ME/conversations/19:abcd0123…@unq.gbl.spaces"
+        "conversationid": "19:abcd0123…@thread.v2",
+        "conversationLink": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations/19:abcd0123…@thread.v2"
       },
       "properties": {
         "consumptionhorizon": "1715842456893;1715842456893;1715842401007",
@@ -158,11 +158,11 @@ BehaviorOverride: redirectAs404
         "threadType": "chat",
         "productThreadType": "OneToOneChat",
         "createdat": "1714000000000",
-        "creator": "8:live:exampleuser",
+        "creator": "8:orgid:00000000-0000-0000-0000-000000000000",
         "version": 1715842456893,
         "rosterVersion": 1714000000000,
         "lastSequenceId": 187,
-        "originalThreadId": "19:abcd0123…@unq.gbl.spaces",
+        "originalThreadId": "19:abcd0123…@thread.v2",
         "isStickyThread": false,
         "isCreator": true,
         "gapDetectionEnabled": true,
@@ -178,7 +178,7 @@ BehaviorOverride: redirectAs404
   ],
   "_metadata": {
     "totalCount": 1,
-    "syncState": "https://msgapi.teams.live.com/v1/users/ME/conversations?cursor=...&pageSize=30"
+    "syncState": "https://emea.ng.msg.teams.microsoft.com/v1/users/ME/conversations?cursor=...&pageSize=30"
   }
 }
 ```
@@ -212,8 +212,8 @@ A [Conversation](#the-conversation-object) object.
 ### Example request
 
 ```http
-GET /v1/users/ME/conversations/19%3Aabcd0123%E2%80%A6%40unq.gbl.spaces?view=msnp24Equivalent HTTP/1.1
-Host: msgapi.teams.live.com
+GET /v1/users/ME/conversations/19%3Aabcd0123%E2%80%A6%40thread.v2?view=msnp24Equivalent HTTP/1.1
+Host: emea.ng.msg.teams.microsoft.com
 Authentication: skypetoken=eyJhbGci...
 ```
 
@@ -235,8 +235,8 @@ Updates the conversation's read marker. The marker is the `consumptionhorizon` e
 
 ### Request body
 
-| Name                 | Type   | Description                                                                                                                                                                                                                         |
-| -------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name                 | Type   | Description                                                                                                                                                                                                                          |
+| -------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `consumptionhorizon` | string | `<lastReadMessageId>;<lastReadArrivalMs>;<lastSentByMeArrivalMs>`. The third value should carry forward the previous one if the caller has not just sent a message. Backwards horizons (lower than the current value) are rejected. |
 
 ### Returns
@@ -246,8 +246,8 @@ Updates the conversation's read marker. The marker is the `consumptionhorizon` e
 ### Example request
 
 ```http
-PUT /v1/users/ME/conversations/19%3Aabcd0123%E2%80%A6%40unq.gbl.spaces/properties?name=consumptionhorizon HTTP/1.1
-Host: msgapi.teams.live.com
+PUT /v1/users/ME/conversations/19%3Aabcd0123%E2%80%A6%40thread.v2/properties?name=consumptionhorizon HTTP/1.1
+Host: emea.ng.msg.teams.microsoft.com
 Authentication: skypetoken=eyJhbGci...
 Content-Type: application/json
 
