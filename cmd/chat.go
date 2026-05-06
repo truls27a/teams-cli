@@ -159,9 +159,9 @@ var chatViewCmd = &cobra.Command{
 			deleted, edited        bool
 			whenISO                string
 		}
-		today := time.Now().Format("2006-01-02")
 		rows := make([]row, 0, len(msgs))
 		nameWidth := 0
+		timeWidth := len("TIME")
 		mriToName := map[string]string{}
 		extractMRI := func(from string) string {
 			if i := strings.LastIndex(from, "/"); i >= 0 {
@@ -184,11 +184,10 @@ var chatViewCmd = &cobra.Command{
 			}
 			when := raw
 			if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-				if t.Format("2006-01-02") == today {
-					when = t.Format("15:04")
-				} else {
-					when = t.Format("01-02 15:04")
-				}
+				when = t.Local().Format("15:04")
+			}
+			if n := len(when); n > timeWidth {
+				timeWidth = n
 			}
 			flag := ""
 			_, deleted := m.Properties["deletetime"]
@@ -249,12 +248,12 @@ var chatViewCmd = &cobra.Command{
 		if nameWidth < 4 {
 			nameWidth = 4
 		}
-		fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "NAME", "TIME", "MESSAGE")
+		fmt.Printf("%-*s  %-*s  %s\n", timeWidth, "TIME", nameWidth, "NAME", "MESSAGE")
 		for _, r := range rows {
 			lines := strings.Split(r.body, "\n")
-			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
+			fmt.Printf("%-*s  %-*s  %s%s\n", timeWidth, r.when, nameWidth, truncate(r.name, nameWidth), lines[0], r.flag)
 			for _, line := range lines[1:] {
-				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
+				fmt.Println(line)
 			}
 		}
 		return nil
