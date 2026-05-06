@@ -258,6 +258,7 @@ var chatViewCmd = &cobra.Command{
 			if s := formatReactions(r.reactions); s != "" {
 				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", s)
 			}
+			fmt.Println()
 		}
 		return nil
 	},
