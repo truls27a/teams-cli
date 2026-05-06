@@ -300,6 +300,17 @@ var chatViewCmd = &cobra.Command{
 				}
 			}
 		}
+
+		for i := len(msgs) - 1; i >= 0; i-- {
+			m := msgs[i]
+			if m.ClientMessageID == "" {
+				continue
+			}
+			if err := client.SetConsumptionHorizon(context.Background(), convID, m.ID, m.ClientMessageID); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to mark chat read: %v\n", err)
+			}
+			break
+		}
 		return nil
 	},
 }

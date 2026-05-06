@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type Message struct {
@@ -64,6 +65,13 @@ func (c *Client) ListMessages(ctx context.Context, conversationID string, pageSi
 		return nil, "", err
 	}
 	return resp.Messages, resp.Metadata.SyncState, nil
+}
+
+func (c *Client) SetConsumptionHorizon(ctx context.Context, conversationID, messageID, clientMessageID string) error {
+	path := "/v1/users/ME/conversations/" + url.PathEscape(conversationID) + "/properties?name=consumptionhorizon"
+	value := fmt.Sprintf("%s;%d;%s", messageID, time.Now().UnixMilli(), clientMessageID)
+	body := map[string]string{"consumptionhorizon": value}
+	return c.doChatSvc(ctx, "PUT", path, body, nil)
 }
 
 func (c *Client) SendMessage(ctx context.Context, conversationID string, req SendMessageRequest) (*SendMessageResponse, error) {
