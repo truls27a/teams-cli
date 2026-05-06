@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,25 +51,29 @@ var chatListCmd = &cobra.Command{
 
 		names := resolveMissingNames(context.Background(), client, chats)
 
+		if err := saveChatIndex(chats); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to save chat index: %v\n", err)
+		}
+
 		if jsonOutput {
 			type item struct {
-				Name string `json:"name"`
-				Type string `json:"type"`
-				ID   string `json:"id"`
+				ID             int    `json:"id"`
+				Name           string `json:"name"`
+				Type           string `json:"type"`
+				ConversationID string `json:"conversation_id"`
 			}
 			out := make([]item, 0, len(chats))
-			for _, c := range chats {
-				out = append(out, item{chatDisplay(c, client.SelfMRI, names), chatType(c), c.ID})
+			for i, c := range chats {
+				out = append(out, item{i + 1, chatDisplay(c, client.SelfMRI, names), chatType(c), c.ID})
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(out)
 		}
 
-		fmt.Printf("%-30s  %-8s  %s\n", "NAME", "TYPE", "ID")
-		fmt.Println(strings.Repeat("-", 80))
-		for _, c := range chats {
-			fmt.Printf("%-30s  %-8s  %s\n", truncate(chatDisplay(c, client.SelfMRI, names), 30), chatType(c), c.ID)
+		fmt.Printf("%-4s  %-8s  %s\n", "ID", "TYPE", "NAME")
+		for i, c := range chats {
+			fmt.Printf("%-4d  %-8s  %s\n", i+1, chatType(c), chatDisplay(c, client.SelfMRI, names))
 		}
 		return nil
 	},
@@ -129,7 +135,11 @@ var chatViewCmd = &cobra.Command{
 		if pageSize > 200 {
 			pageSize = 200
 		}
-		msgs, _, err := client.ListMessages(context.Background(), args[0], pageSize)
+		convID, err := resolveChatID(args[0])
+		if err != nil {
+			return err
+		}
+		msgs, _, err := client.ListMessages(context.Background(), convID, pageSize)
 		if err != nil {
 			return err
 		}
@@ -253,8 +263,12 @@ var chatSendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		convID, err := resolveChatID(args[0])
+		if err != nil {
+			return err
+		}
 		clientMsgID := fmt.Sprintf("%d%03d", time.Now().UnixMilli(), rand.IntN(1000))
-		resp, err := client.SendMessage(context.Background(), args[0], teams.SendMessageRequest{
+		resp, err := client.SendMessage(context.Background(), convID, teams.SendMessageRequest{
 			Content:         args[1],
 			Messagetype:     "RichText/Html",
 			Contenttype:     "Text",
@@ -529,6 +543,54 @@ func firstName(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+func chatIndexPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "teams-cli", "chat-index.json")
+}
+
+type chatIndex struct {
+	Chats []string `json:"chats"`
+}
+
+func saveChatIndex(chats []teams.Chat) error {
+	idx := chatIndex{Chats: make([]string, len(chats))}
+	for i, c := range chats {
+		idx.Chats[i] = c.ID
+	}
+	path := chatIndexPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(idx, "", "  ")
+	return os.WriteFile(path, b, 0600)
+}
+
+func loadChatIndex() (*chatIndex, error) {
+	b, err := os.ReadFile(chatIndexPath())
+	if err != nil {
+		return nil, err
+	}
+	var idx chatIndex
+	if err := json.Unmarshal(b, &idx); err != nil {
+		return nil, err
+	}
+	return &idx, nil
+}
+
+func resolveChatID(arg string) (string, error) {
+	if n, err := strconv.Atoi(arg); err == nil {
+		idx, err := loadChatIndex()
+		if err != nil {
+			return "", fmt.Errorf("no chat index found — run `teams chat list` first")
+		}
+		if n < 1 || n > len(idx.Chats) {
+			return "", fmt.Errorf("chat id %d out of range (1..%d) — run `teams chat list` to refresh", n, len(idx.Chats))
+		}
+		return idx.Chats[n-1], nil
+	}
+	return arg, nil
 }
 
 func chatDisplay(c teams.Chat, selfMRI string, resolved map[string]string) string {
