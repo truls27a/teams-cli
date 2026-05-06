@@ -192,9 +192,9 @@ var chatViewCmd = &cobra.Command{
 			_, deleted := m.Properties["deletetime"]
 			_, edited := m.Properties["edittime"]
 			if deleted {
-				flag = " [deleted]"
+				flag = " (deleted)"
 			} else if edited {
-				flag = " [edited]"
+				flag = " (edited)"
 			}
 			name := m.IMDisplayName
 			if name == "" {
