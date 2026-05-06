@@ -350,6 +350,14 @@ func truncate(s string, n int) string {
 	return string([]rune(s)[:n-1]) + "…"
 }
 
+func firstName(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, " \t"); i > 0 {
+		return s[:i]
+	}
+	return s
+}
+
 func chatDisplay(c teams.Chat, selfMRI string, resolved map[string]string) string {
 	if c.Title != nil && *c.Title != "" {
 		return *c.Title
@@ -371,12 +379,19 @@ func chatDisplay(c teams.Chat, selfMRI string, resolved map[string]string) strin
 		}
 		names = append(names, name)
 	}
-	switch {
-	case len(names) == 0:
-	case len(names) <= 3:
-		return strings.Join(names, ", ")
-	default:
-		return fmt.Sprintf("%s, %s, %s +%d", names[0], names[1], names[2], len(names)-3)
+	if len(names) > 0 {
+		isGroup := chatType(c) == "group"
+		display := names
+		if isGroup {
+			display = make([]string, len(names))
+			for i, n := range names {
+				display[i] = firstName(n)
+			}
+		}
+		if len(display) <= 3 {
+			return strings.Join(display, ", ")
+		}
+		return fmt.Sprintf("%s, %s, %s +%d", display[0], display[1], display[2], len(display)-3)
 	}
 	for _, mri := range peerCandidates(c, selfMRI) {
 		if name := resolved[mri]; name != "" {
