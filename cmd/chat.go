@@ -272,7 +272,7 @@ var chatSendCmd = &cobra.Command{
 			return err
 		}
 		clientMsgID := fmt.Sprintf("%d%03d", time.Now().UnixMilli(), rand.IntN(1000))
-		resp, err := client.SendMessage(context.Background(), convID, teams.SendMessageRequest{
+		_, err = client.SendMessage(context.Background(), convID, teams.SendMessageRequest{
 			Content:         args[1],
 			Messagetype:     "RichText/Html",
 			Contenttype:     "Text",
@@ -285,11 +285,10 @@ var chatSendCmd = &cobra.Command{
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(struct {
-				Sent bool  `json:"sent"`
-				ID   int64 `json:"id"`
-			}{true, resp.OriginalArrivalTime})
+				Sent bool `json:"sent"`
+			}{true})
 		}
-		fmt.Printf("Sent (id: %d).\n", resp.OriginalArrivalTime)
+		fmt.Println("Sent.")
 		return nil
 	},
 }
