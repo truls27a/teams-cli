@@ -291,6 +291,65 @@ Wrap the mentioned user's display name in `<at id="...">` (where `id` is the zer
 
 ---
 
+## Mark messages as read
+
+```
+PUT /v1/users/ME/conversations/:id/properties?name=consumptionhorizon
+```
+
+Advances the caller's read marker (`consumptionHorizon`) for the conversation. The chat appears as read in [CSA](./csa.md) once the horizon reaches the latest delivered message.
+
+### Path parameters
+
+| Name | Type   | Description                              |
+| ---- | ------ | ---------------------------------------- |
+| `id` | string | The URL-encoded MRI of the conversation. |
+
+### Query parameters
+
+| Name   | Type   | Description                                              |
+| ------ | ------ | -------------------------------------------------------- |
+| `name` | string | Required. Must be `consumptionhorizon` (case-sensitive). |
+
+### Request body
+
+A single field whose value is a semicolon-delimited string with three non-empty segments:
+
+| Field                | Type   | Description                                                                                                              |
+| -------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `consumptionhorizon` | string | `<messageId>;<timestampInMillis>;<clientMessageId>`. All three segments are required and must be non-empty. See below.   |
+
+| Segment             | Source                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `messageId`         | The `id` of the last message the caller has consumed. Numerically equal to that message's `originalarrivaltime` in milliseconds since the epoch. |
+| `timestampInMillis` | Wall-clock time of the read action, in milliseconds since the epoch.                                                                              |
+| `clientMessageId`   | The `clientmessageid` of the same message. Always present on user-composed messages.                                                              |
+
+The service does not validate that `messageId` corresponds to an existing message; values older than the current horizon are accepted but leave the chat unread. The object form returned by CSA (`{originalArrivalTime, timeStamp, clientMessageId}`) is **not** accepted on write.
+
+### Returns
+
+`200 OK` with an empty body. The updated `consumptionHorizon` and `isRead` are observable on the next CSA fetch.
+
+### Example request
+
+```http
+PUT /v1/users/ME/conversations/19%3Aabcd0123%E2%80%A6%40thread.v2/properties?name=consumptionhorizon HTTP/1.1
+Host: emea.ng.msg.teams.microsoft.com
+Authentication: skypetoken=eyJhbGci...
+Content-Type: application/json
+
+{"consumptionhorizon":"1778067592549;1778067607244;2803861881174614181"}
+```
+
+### Errors
+
+| `errorCode` |  HTTP | Description                                                                                                                  |
+| ----------: | ----: | ---------------------------------------------------------------------------------------------------------------------------- |
+|       `201` | `400` | `consumptionhorizon: Invalid format - should be [messageId];[timestampInMillis];[clientMessageId]`. Any segment empty or zero. |
+
+---
+
 ## Errors
 
 Error responses are JSON objects:
