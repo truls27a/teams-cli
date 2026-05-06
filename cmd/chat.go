@@ -252,7 +252,7 @@ var chatViewCmd = &cobra.Command{
 					name = name[:8]
 				}
 			}
-			body := renderContent(m.Content, m.Messagetype, mriToName, !jsonOutput)
+			body := renderContent(m.Content, m.Messagetype, mriToName)
 			if attach := renderAttachments(m.Properties); attach != "" {
 				if body == "" {
 					body = attach
@@ -456,7 +456,7 @@ func renderList(inner string, ordered bool) string {
 	return b.String()
 }
 
-func renderContent(content, messagetype string, names map[string]string, ansi bool) string {
+func renderContent(content, messagetype string, names map[string]string) string {
 	if messagetype == "RichText/Html" {
 		s := blockquoteRE.ReplaceAllStringFunc(content, func(m string) string {
 			sub := blockquoteRE.FindStringSubmatch(m)
@@ -510,26 +510,15 @@ func renderContent(content, messagetype string, names map[string]string, ansi bo
 		})
 		s = headingRE.ReplaceAllStringFunc(s, func(m string) string {
 			txt := strings.TrimSpace(headingRE.FindStringSubmatch(m)[1])
-			if ansi {
-				return "\n\n\x1b[1m" + txt + "\x1b[22m\n\n"
-			}
 			return "\n\n**" + txt + "**\n\n"
 		})
 		s = pRE.ReplaceAllString(s, "$1\n\n")
 		s = brRE.ReplaceAllString(s, "\n")
 		s = boldRE.ReplaceAllStringFunc(s, func(m string) string {
-			txt := boldRE.FindStringSubmatch(m)[2]
-			if ansi {
-				return "\x1b[1m" + txt + "\x1b[22m"
-			}
-			return "**" + txt + "**"
+			return "**" + boldRE.FindStringSubmatch(m)[2] + "**"
 		})
 		s = italicRE.ReplaceAllStringFunc(s, func(m string) string {
-			txt := italicRE.FindStringSubmatch(m)[2]
-			if ansi {
-				return "\x1b[3m" + txt + "\x1b[23m"
-			}
-			return "*" + txt + "*"
+			return "*" + italicRE.FindStringSubmatch(m)[2] + "*"
 		})
 		s = tagRE.ReplaceAllString(s, "")
 		s = strings.NewReplacer(
