@@ -243,6 +243,10 @@ var chatViewCmd = &cobra.Command{
 		if nameWidth > 24 {
 			nameWidth = 24
 		}
+		if nameWidth < 4 {
+			nameWidth = 4
+		}
+		fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "NAME", "TIME", "MESSAGE")
 		for _, r := range rows {
 			lines := strings.Split(r.body, "\n")
 			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
