@@ -251,18 +251,12 @@ var chatViewCmd = &cobra.Command{
 		fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "NAME", "TIME", "MESSAGE")
 		for _, r := range rows {
 			lines := strings.Split(r.body, "\n")
-			suffix := r.flag + formatReactions(r.reactions)
-			if len(lines) == 1 {
-				fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], suffix)
-				continue
-			}
 			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
-			for i, line := range lines[1:] {
-				if i == len(lines)-2 {
-					fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, "", "", line, formatReactions(r.reactions))
-				} else {
-					fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
-				}
+			for _, line := range lines[1:] {
+				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
+			}
+			if s := formatReactions(r.reactions); s != "" {
+				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", s)
 			}
 		}
 		return nil
@@ -665,22 +659,22 @@ func reactionEmoji(key string) string {
 			return string(rune(n))
 		}
 	}
-	return ":" + key + ":"
+	return key
 }
 
 func formatReactions(rs []reactionCount) string {
 	if len(rs) == 0 {
 		return ""
 	}
-	var b strings.Builder
+	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
 		if r.Count == 1 {
-			fmt.Fprintf(&b, "  <%s>", reactionEmoji(r.Key))
+			parts = append(parts, fmt.Sprintf("<%s>", reactionEmoji(r.Key)))
 		} else {
-			fmt.Fprintf(&b, "  <%s %d>", reactionEmoji(r.Key), r.Count)
+			parts = append(parts, fmt.Sprintf("<%s %d>", reactionEmoji(r.Key), r.Count))
 		}
 	}
-	return b.String()
+	return strings.Join(parts, "  ")
 }
 
 func fileKind(ext, name string) string {
