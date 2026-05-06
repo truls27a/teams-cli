@@ -120,16 +120,8 @@ var chatListCmd = &cobra.Command{
 		if idW < 2 {
 			idW = 2
 		}
-		width := termWidth()
-		bodyW := width - (idW + 2)
-		if bodyW < 20 {
-			bodyW = 20
-		}
 		for i := len(chats) - 1; i >= 0; i-- {
 			c := chats[i]
-			if i < len(chats)-1 {
-				fmt.Println()
-			}
 			when := ""
 			if c.LastMessage != nil {
 				raw := c.LastMessage.OriginalArrivalTime
@@ -145,11 +137,6 @@ var chatListCmd = &cobra.Command{
 				header = header + ", " + when
 			}
 			fmt.Printf("%-*d  %s\n", idW, i+1, header)
-			preview := lastMessagePreview(c)
-			if preview != "" {
-				indent := strings.Repeat(" ", idW+2)
-				fmt.Println(indent + truncateRunes(preview, bodyW))
-			}
 		}
 		return nil
 	},
@@ -782,38 +769,3 @@ func chatDisplay(c teams.Chat, selfMRI string, resolved map[string]string) strin
 	return "Conversation"
 }
 
-func truncateRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	if n <= 1 {
-		return "…"
-	}
-	out := make([]rune, 0, n)
-	for _, r := range s {
-		if len(out) >= n-1 {
-			break
-		}
-		out = append(out, r)
-	}
-	return string(out) + "…"
-}
-
-func lastMessagePreview(c teams.Chat) string {
-	if c.LastMessage == nil {
-		return ""
-	}
-	body := renderContent(c.LastMessage.Content, c.LastMessage.MessageType, nil, false)
-	body = strings.Join(strings.Fields(body), " ")
-	if body == "" {
-		return ""
-	}
-	author := c.LastMessage.IMDisplayName
-	if c.IsLastMessageFromMe {
-		author = "You"
-	}
-	if author == "" {
-		return body
-	}
-	return author + ": " + body
-}
