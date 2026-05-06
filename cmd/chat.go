@@ -121,7 +121,12 @@ var chatListCmd = &cobra.Command{
 			idW = 2
 		}
 		for i := len(chats) - 1; i >= 0; i-- {
-			fmt.Printf("%-*d  %s\n", idW, i+1, chatDisplay(chats[i], client.SelfMRI, names))
+			c := chats[i]
+			line := fmt.Sprintf("%-*d  %s", idW, i+1, chatDisplay(c, client.SelfMRI, names))
+			if !c.IsRead && !c.IsLastMessageFromMe && !c.IsEmptyConversation {
+				line += " *"
+			}
+			fmt.Println(line)
 		}
 		return nil
 	},
