@@ -121,22 +121,7 @@ var chatListCmd = &cobra.Command{
 			idW = 2
 		}
 		for i := len(chats) - 1; i >= 0; i-- {
-			c := chats[i]
-			when := ""
-			if c.LastMessage != nil {
-				raw := c.LastMessage.OriginalArrivalTime
-				if raw == "" {
-					raw = c.LastMessage.ComposeTime
-				}
-				if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-					when = t.Local().Format("2006-01-02 15:04")
-				}
-			}
-			header := chatDisplay(c, client.SelfMRI, names)
-			if when != "" {
-				header = header + ", " + when
-			}
-			fmt.Printf("%-*d  %s\n", idW, i+1, header)
+			fmt.Printf("%-*d  %s\n", idW, i+1, chatDisplay(chats[i], client.SelfMRI, names))
 		}
 		return nil
 	},
