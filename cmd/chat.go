@@ -236,7 +236,7 @@ var chatViewCmd = &cobra.Command{
 		}
 		for i, r := range rows {
 			if i > 0 {
-				fmt.Println()
+				fmt.Println("---")
 			}
 			fmt.Printf("%s, %s%s\n", r.name, r.when, r.flag)
 			fmt.Println(r.body)
