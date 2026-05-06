@@ -161,8 +161,6 @@ var chatViewCmd = &cobra.Command{
 			date                   string
 		}
 		rows := make([]row, 0, len(msgs))
-		nameWidth := 0
-		timeWidth := len("TIME")
 		mriToName := map[string]string{}
 		extractMRI := func(from string) string {
 			if i := strings.LastIndex(from, "/"); i >= 0 {
@@ -198,9 +196,6 @@ var chatViewCmd = &cobra.Command{
 					date = lt.Format("2006-01-02")
 				}
 			}
-			if n := len(when); n > timeWidth {
-				timeWidth = n
-			}
 			flag := ""
 			_, deleted := m.Properties["deletetime"]
 			_, edited := m.Properties["edittime"]
@@ -223,9 +218,6 @@ var chatViewCmd = &cobra.Command{
 				} else if len(name) > 8 {
 					name = name[:8]
 				}
-			}
-			if n := len([]rune(name)); n > nameWidth {
-				nameWidth = n
 			}
 			body := renderContent(m.Content, m.Messagetype, mriToName, !jsonOutput)
 			if attach := renderAttachments(m.Properties); attach != "" {
@@ -254,13 +246,6 @@ var chatViewCmd = &cobra.Command{
 			enc.SetIndent("", "  ")
 			return enc.Encode(out)
 		}
-		if nameWidth > 24 {
-			nameWidth = 24
-		}
-		if nameWidth < 4 {
-			nameWidth = 4
-		}
-		fmt.Printf("%-*s  %-*s  %s\n", timeWidth, "TIME", nameWidth, "NAME", "MESSAGE")
 		lastDate := ""
 		for _, r := range rows {
 			if r.date != "" && r.date != lastDate {
@@ -270,7 +255,7 @@ var chatViewCmd = &cobra.Command{
 				lastDate = r.date
 			}
 			lines := strings.Split(r.body, "\n")
-			fmt.Printf("%-*s  %-*s  %s%s\n", timeWidth, r.when, nameWidth, truncate(r.name, nameWidth), lines[0], r.flag)
+			fmt.Printf("%s  %s  %s%s\n", r.when, r.name, lines[0], r.flag)
 			for _, line := range lines[1:] {
 				fmt.Println(line)
 			}
@@ -561,13 +546,6 @@ func peerCandidates(c teams.Chat, selfMRI string) []string {
 		}
 	}
 	return out
-}
-
-func truncate(s string, n int) string {
-	if len([]rune(s)) <= n {
-		return s
-	}
-	return string([]rune(s)[:n-1]) + "…"
 }
 
 func messageTime(m teams.Message) time.Time {
