@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"teams-cli/teams"
+	"teams/teams"
 )
 
 type storedAuth struct {
@@ -33,7 +33,7 @@ type storedAuth struct {
 
 func authPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "teams-cli", "auth.json")
+	return filepath.Join(home, ".config", "teams", "auth.json")
 }
 
 func loadAuth() (*storedAuth, error) {

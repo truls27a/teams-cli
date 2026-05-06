@@ -1,6 +1,6 @@
 package main
 
-import "teams-cli/cmd"
+import "teams/cmd"
 
 func main() {
 	cmd.Execute()

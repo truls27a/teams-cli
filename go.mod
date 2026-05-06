@@ -1,4 +1,4 @@
-module teams-cli
+module teams
 
 go 1.26.2
 

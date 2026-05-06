@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"teams-cli/teams"
+	"teams/teams"
 
 	"github.com/spf13/cobra"
 )
@@ -560,7 +560,7 @@ func firstName(s string) string {
 
 func chatIndexPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "teams-cli", "chat-index.json")
+	return filepath.Join(home, ".config", "teams", "chat-index.json")
 }
 
 type chatIndex struct {
