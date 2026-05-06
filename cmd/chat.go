@@ -632,40 +632,11 @@ func collectReactions(props map[string]any) []reactionCount {
 	return out
 }
 
-func reactionEmoji(key string) string {
-	switch key {
-	case "like":
-		return "👍"
-	case "heart":
-		return "❤️"
-	case "laugh":
-		return "😆"
-	case "surprised":
-		return "😮"
-	case "sad":
-		return "😢"
-	case "angry":
-		return "😠"
-	case "praise":
-		return "🙌"
-	case "fire":
-		return "🔥"
-	case "giggle":
-		return "🤭"
-	case "party":
-		return "🎉"
-	case "skull":
-		return "💀"
-	}
+func reactionLabel(key string) string {
 	if i := strings.Index(key, ";"); i >= 0 {
 		key = key[:i]
 	}
-	if i := strings.Index(key, "_"); i > 0 {
-		if n, err := strconv.ParseInt(key[:i], 16, 32); err == nil && n > 0x20 {
-			return string(rune(n))
-		}
-	}
-	return ":" + key + ":"
+	return key
 }
 
 func formatReactions(rs []reactionCount) string {
@@ -675,9 +646,9 @@ func formatReactions(rs []reactionCount) string {
 	var b strings.Builder
 	for _, r := range rs {
 		if r.Count == 1 {
-			fmt.Fprintf(&b, "  <%s>", reactionEmoji(r.Key))
+			fmt.Fprintf(&b, "  <%s>", reactionLabel(r.Key))
 		} else {
-			fmt.Fprintf(&b, "  <%s %d>", reactionEmoji(r.Key), r.Count)
+			fmt.Fprintf(&b, "  <%s %d>", reactionLabel(r.Key), r.Count)
 		}
 	}
 	return b.String()
