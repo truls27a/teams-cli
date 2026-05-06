@@ -7,11 +7,13 @@ import (
 	"math/rand/v2"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"teams-cli/teams"
+
+	"github.com/spf13/cobra"
 )
 
 var chatCmd = &cobra.Command{
@@ -143,15 +145,14 @@ var chatViewCmd = &cobra.Command{
 			return err
 		}
 
-		// API returns newest-first; reverse for display
-		for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
-			msgs[i], msgs[j] = msgs[j], msgs[i]
-		}
+		sort.SliceStable(msgs, func(i, j int) bool {
+			return messageTime(msgs[i]).Before(messageTime(msgs[j]))
+		})
 
 		type row struct {
 			name, when, body, flag string
 			deleted, edited        bool
-			whenISO               string
+			whenISO                string
 		}
 		today := time.Now().Format("2006-01-02")
 		rows := make([]row, 0, len(msgs))
@@ -210,7 +211,15 @@ var chatViewCmd = &cobra.Command{
 			if n := len([]rune(name)); n > nameWidth {
 				nameWidth = n
 			}
-			rows = append(rows, row{name, when, renderContent(m.Content, m.Messagetype, mriToName), flag, deleted, edited, raw})
+			body := renderContent(m.Content, m.Messagetype, mriToName)
+			if attach := renderAttachments(m.Properties); attach != "" {
+				if body == "" {
+					body = attach
+				} else {
+					body = body + "\n" + attach
+				}
+			}
+			rows = append(rows, row{name, when, body, flag, deleted, edited, raw})
 		}
 
 		if jsonOutput {
@@ -299,20 +308,20 @@ func fetchAllMessages(ctx context.Context, client *teams.Client, convID string) 
 }
 
 var (
-	tagRE        = regexp.MustCompile(`<[^>]+>`)
-	anchorRE     = regexp.MustCompile(`(?is)<a\b[^>]*\bhref="([^"]+)"[^>]*>(.*?)</a>`)
-	blockquoteRE = regexp.MustCompile(`(?is)<blockquote\b[^>]*>(.*?)</blockquote>\s*`)
-	quoteAuthorRE = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*>(.*?)</(?:strong|span|b)>`)
+	tagRE            = regexp.MustCompile(`<[^>]+>`)
+	anchorRE         = regexp.MustCompile(`(?is)<a\b[^>]*\bhref="([^"]+)"[^>]*>(.*?)</a>`)
+	blockquoteRE     = regexp.MustCompile(`(?is)<blockquote\b[^>]*>(.*?)</blockquote>\s*`)
+	quoteAuthorRE    = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*>(.*?)</(?:strong|span|b)>`)
 	quoteAuthorMRIRE = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*\bitemid="([^"]+)"`)
-	quotePreviewRE = regexp.MustCompile(`(?is)<p\b[^>]*\bitemprop="preview"[^>]*>(.*?)</p>`)
-	imgRE          = regexp.MustCompile(`(?is)<img\b[^>]*>`)
-	videoRE        = regexp.MustCompile(`(?is)<video\b[^>]*>.*?</video>|<video\b[^>]*/?>`)
-	audioRE        = regexp.MustCompile(`(?is)<audio\b[^>]*>.*?</audio>|<audio\b[^>]*/?>`)
-	emojiRE        = regexp.MustCompile(`(?is)<emoji\b[^>]*>.*?</emoji>`)
-	uriObjectRE    = regexp.MustCompile(`(?is)<URIObject\b[^>]*\btype="([^"]+)"[^>]*>.*?</URIObject>`)
-	attachmentRE   = regexp.MustCompile(`(?is)<attachment\b[^>]*>.*?</attachment>`)
-	attrAltRE      = regexp.MustCompile(`(?is)\balt="([^"]*)"`)
-	attrItemtypeRE = regexp.MustCompile(`(?is)\bitemtype="([^"]*)"`)
+	quotePreviewRE   = regexp.MustCompile(`(?is)<p\b[^>]*\bitemprop="preview"[^>]*>(.*?)</p>`)
+	imgRE            = regexp.MustCompile(`(?is)<img\b[^>]*>`)
+	videoRE          = regexp.MustCompile(`(?is)<video\b[^>]*>.*?</video>|<video\b[^>]*/?>`)
+	audioRE          = regexp.MustCompile(`(?is)<audio\b[^>]*>.*?</audio>|<audio\b[^>]*/?>`)
+	emojiRE          = regexp.MustCompile(`(?is)<emoji\b[^>]*>.*?</emoji>`)
+	uriObjectRE      = regexp.MustCompile(`(?is)<URIObject\b[^>]*\btype="([^"]+)"[^>]*>.*?</URIObject>`)
+	attachmentRE     = regexp.MustCompile(`(?is)<attachment\b[^>]*>.*?</attachment>`)
+	attrAltRE        = regexp.MustCompile(`(?is)\balt="([^"]*)"`)
+	attrItemtypeRE   = regexp.MustCompile(`(?is)\bitemtype="([^"]*)"`)
 )
 
 func mediaLabelFromType(t string) string {
@@ -415,7 +424,7 @@ func renderContent(content, messagetype string, names map[string]string) string 
 				return ""
 			}
 			switch strings.ToLower(alt) {
-			case "", "image", "picture", "photo":
+			case "", "image", "picture", "photo", "bild":
 				return "[image]"
 			}
 			return "[image: " + alt + "]"
@@ -479,6 +488,64 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n-1]) + "…"
+}
+
+func messageTime(m teams.Message) time.Time {
+	raw := m.OriginalArrivalTime
+	if raw == "" {
+		raw = m.ComposeTime
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+func renderAttachments(props map[string]any) string {
+	raw, ok := props["files"].(string)
+	if !ok || raw == "" || raw == "[]" {
+		return ""
+	}
+	var files []struct {
+		FileName string `json:"fileName"`
+		FileType string `json:"fileType"`
+		Title    string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(raw), &files); err != nil {
+		return ""
+	}
+	var parts []string
+	for _, f := range files {
+		name := f.FileName
+		if name == "" {
+			name = f.Title
+		}
+		kind := fileKind(f.FileType, name)
+		if name != "" {
+			parts = append(parts, fmt.Sprintf("[%s: %s]", kind, name))
+		} else {
+			parts = append(parts, "["+kind+"]")
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func fileKind(ext, name string) string {
+	e := strings.ToLower(strings.TrimPrefix(ext, "."))
+	if e == "" {
+		if i := strings.LastIndex(name, "."); i >= 0 {
+			e = strings.ToLower(name[i+1:])
+		}
+	}
+	switch e {
+	case "mov", "mp4", "webm", "avi", "mkv", "m4v":
+		return "video"
+	case "mp3", "wav", "m4a", "ogg", "flac", "aac":
+		return "audio"
+	case "jpg", "jpeg", "png", "gif", "bmp", "webp", "heic":
+		return "image"
+	}
+	return "file"
 }
 
 func firstName(s string) string {
