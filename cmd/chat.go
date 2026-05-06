@@ -305,7 +305,47 @@ var (
 	quoteAuthorRE = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*>(.*?)</(?:strong|span|b)>`)
 	quoteAuthorMRIRE = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*\bitemid="([^"]+)"`)
 	quotePreviewRE = regexp.MustCompile(`(?is)<p\b[^>]*\bitemprop="preview"[^>]*>(.*?)</p>`)
+	imgRE          = regexp.MustCompile(`(?is)<img\b[^>]*>`)
+	videoRE        = regexp.MustCompile(`(?is)<video\b[^>]*>.*?</video>|<video\b[^>]*/?>`)
+	audioRE        = regexp.MustCompile(`(?is)<audio\b[^>]*>.*?</audio>|<audio\b[^>]*/?>`)
+	emojiRE        = regexp.MustCompile(`(?is)<emoji\b[^>]*>.*?</emoji>`)
+	uriObjectRE    = regexp.MustCompile(`(?is)<URIObject\b[^>]*\btype="([^"]+)"[^>]*>.*?</URIObject>`)
+	attachmentRE   = regexp.MustCompile(`(?is)<attachment\b[^>]*>.*?</attachment>`)
+	attrAltRE      = regexp.MustCompile(`(?is)\balt="([^"]*)"`)
+	attrItemtypeRE = regexp.MustCompile(`(?is)\bitemtype="([^"]*)"`)
 )
+
+func mediaLabelFromType(t string) string {
+	t = strings.ToLower(t)
+	switch {
+	case strings.HasPrefix(t, "picture"), strings.HasPrefix(t, "image"):
+		return "[image]"
+	case strings.HasPrefix(t, "video"):
+		return "[video]"
+	case strings.HasPrefix(t, "audio"), strings.Contains(t, "voice"):
+		return "[audio]"
+	case strings.HasPrefix(t, "file"):
+		return "[file]"
+	}
+	return "[attachment]"
+}
+
+func messagetypeLabel(messagetype string) string {
+	mt := strings.ToLower(messagetype)
+	switch {
+	case strings.Contains(mt, "video"):
+		return "[video]"
+	case strings.Contains(mt, "audio"), strings.Contains(mt, "voice"):
+		return "[audio]"
+	case strings.Contains(mt, "image"), strings.Contains(mt, "picture"), strings.Contains(mt, "media_card"):
+		return "[image]"
+	case strings.Contains(mt, "file"), strings.Contains(mt, "generic"):
+		return "[file]"
+	case strings.Contains(mt, "media"):
+		return "[attachment]"
+	}
+	return ""
+}
 
 func renderQuote(inner string, names map[string]string) string {
 	author := ""
@@ -351,6 +391,36 @@ func renderContent(content, messagetype string, names map[string]string) string 
 			}
 			return text + " (" + href + ")"
 		})
+		s = uriObjectRE.ReplaceAllStringFunc(s, func(m string) string {
+			sub := uriObjectRE.FindStringSubmatch(m)
+			return mediaLabelFromType(sub[1])
+		})
+		s = videoRE.ReplaceAllString(s, "[video]")
+		s = audioRE.ReplaceAllString(s, "[audio]")
+		s = emojiRE.ReplaceAllStringFunc(s, func(m string) string {
+			if a := attrAltRE.FindStringSubmatch(m); a != nil && a[1] != "" {
+				return a[1]
+			}
+			return ""
+		})
+		s = imgRE.ReplaceAllStringFunc(s, func(m string) string {
+			alt := ""
+			if a := attrAltRE.FindStringSubmatch(m); a != nil {
+				alt = strings.TrimSpace(a[1])
+			}
+			if it := attrItemtypeRE.FindStringSubmatch(m); it != nil && strings.Contains(strings.ToLower(it[1]), "emoji") {
+				if alt != "" {
+					return alt
+				}
+				return ""
+			}
+			switch strings.ToLower(alt) {
+			case "", "image", "picture", "photo":
+				return "[image]"
+			}
+			return "[image: " + alt + "]"
+		})
+		s = attachmentRE.ReplaceAllString(s, "[attachment]")
 		s = tagRE.ReplaceAllString(s, "")
 		s = strings.NewReplacer(
 			"&amp;", "&", "&lt;", "<", "&gt;", ">",
@@ -359,7 +429,16 @@ func renderContent(content, messagetype string, names map[string]string) string 
 		for strings.Contains(s, "\n\n\n") {
 			s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
 		}
-		return strings.TrimSpace(s)
+		s = strings.TrimSpace(s)
+		if s == "" {
+			if label := messagetypeLabel(messagetype); label != "" {
+				return label
+			}
+		}
+		return s
+	}
+	if label := messagetypeLabel(messagetype); label != "" && strings.TrimSpace(content) == "" {
+		return label
 	}
 	return strings.TrimSpace(content)
 }
