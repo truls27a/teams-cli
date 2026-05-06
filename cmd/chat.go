@@ -74,16 +74,25 @@ var chatListCmd = &cobra.Command{
 func resolveMissingNames(ctx context.Context, client *teams.Client, chats []teams.Chat) map[string]string {
 	seen := map[string]bool{}
 	var mris []string
+	add := func(mri string) {
+		if mri == "" || mri == client.SelfMRI || seen[mri] {
+			return
+		}
+		if !strings.HasPrefix(mri, "8:orgid:") && !strings.HasPrefix(mri, "28:") {
+			return
+		}
+		seen[mri] = true
+		mris = append(mris, mri)
+	}
 	for _, c := range chats {
 		for _, m := range c.Members {
-			if m.MRI == client.SelfMRI || m.FriendlyName != "" || seen[m.MRI] {
+			if m.FriendlyName != "" {
 				continue
 			}
-			if !strings.HasPrefix(m.MRI, "8:orgid:") && !strings.HasPrefix(m.MRI, "28:") {
-				continue
-			}
-			seen[m.MRI] = true
-			mris = append(mris, m.MRI)
+			add(m.MRI)
+		}
+		for _, mri := range peerCandidates(c, client.SelfMRI) {
+			add(mri)
 		}
 	}
 	if len(mris) == 0 {
@@ -315,6 +324,25 @@ func chatType(c teams.Chat) string {
 	return "other"
 }
 
+func peerCandidates(c teams.Chat, selfMRI string) []string {
+	var out []string
+	if c.Creator != "" && c.Creator != selfMRI {
+		out = append(out, c.Creator)
+	}
+	if i := strings.Index(c.ID, "@unq.gbl.spaces"); i > 0 {
+		body := strings.TrimPrefix(c.ID[:i], "19:")
+		for part := range strings.SplitSeq(body, "_") {
+			if len(part) == 36 {
+				mri := "8:orgid:" + part
+				if mri != selfMRI {
+					out = append(out, mri)
+				}
+			}
+		}
+	}
+	return out
+}
+
 func truncate(s string, n int) string {
 	if len([]rune(s)) <= n {
 		return s
@@ -349,6 +377,11 @@ func chatDisplay(c teams.Chat, selfMRI string, resolved map[string]string) strin
 		return strings.Join(names, ", ")
 	default:
 		return fmt.Sprintf("%s, %s, %s +%d", names[0], names[1], names[2], len(names)-3)
+	}
+	for _, mri := range peerCandidates(c, selfMRI) {
+		if name := resolved[mri]; name != "" {
+			return name
+		}
 	}
 	if c.LastMessage != nil && !c.IsLastMessageFromMe && c.LastMessage.IMDisplayName != "" {
 		return c.LastMessage.IMDisplayName
