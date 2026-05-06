@@ -1,9 +1,14 @@
 package teams
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
+	"strings"
 )
 
 type Message struct {
@@ -55,7 +60,7 @@ func (c *Client) ListMessages(ctx context.Context, conversationID string, pageSi
 	path := fmt.Sprintf("/v1/users/ME/conversations/%s/messages?pageSize=%d&view=msnp24Equivalent",
 		url.PathEscape(conversationID), pageSize)
 	var resp listMessagesResponse
-	if err := c.doMessaging(ctx, "GET", path, nil, &resp); err != nil {
+	if err := c.doChatSvc(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, "", err
 	}
 	return resp.Messages, resp.Metadata.SyncState, nil
@@ -63,7 +68,7 @@ func (c *Client) ListMessages(ctx context.Context, conversationID string, pageSi
 
 func (c *Client) ListMessagesPage(ctx context.Context, syncStateURL string) ([]Message, string, error) {
 	var resp listMessagesResponse
-	if err := c.doMessaging(ctx, "GET", syncStateURL, nil, &resp); err != nil {
+	if err := c.doChatSvc(ctx, "GET", syncStateURL, nil, &resp); err != nil {
 		return nil, "", err
 	}
 	return resp.Messages, resp.Metadata.SyncState, nil
@@ -72,8 +77,51 @@ func (c *Client) ListMessagesPage(ctx context.Context, syncStateURL string) ([]M
 func (c *Client) SendMessage(ctx context.Context, conversationID string, req SendMessageRequest) (*SendMessageResponse, error) {
 	path := "/v1/users/ME/conversations/" + url.PathEscape(conversationID) + "/messages"
 	var resp SendMessageResponse
-	if err := c.doMessaging(ctx, "POST", path, req, &resp); err != nil {
+	if err := c.doChatSvc(ctx, "POST", path, req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
+}
+
+func (c *Client) doChatSvc(ctx context.Context, method, pathOrURL string, body any, out any) error {
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		bodyReader = bytes.NewReader(b)
+	}
+
+	url := pathOrURL
+	if !strings.HasPrefix(pathOrURL, "http") {
+		url = c.MessagingBaseURL + pathOrURL
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authentication", "skypetoken="+c.SkypeToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("BehaviorOverride", "redirectAs404")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s %s: %d %s", method, url, resp.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	if out != nil {
+		return json.NewDecoder(resp.Body).Decode(out)
+	}
+	return nil
 }

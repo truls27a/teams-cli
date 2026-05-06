@@ -1,8 +1,20 @@
-# Users
+# Middle tier (MT)
 
-A User is a profile record returned by the middle tier (MT). Profile lookups resolve a member MRI or AAD object ID to a display name and contact details — used to fill in names that the chat-service aggregator omits from `chats[].members[].friendlyName`.
+The middle tier resolves member MRIs and AAD object IDs to display names, email addresses, and tenant metadata. It is bearer-authenticated and region-stamped; the host is advertised in `regionGtms.middleTier` after sign-in (e.g. `https://teams.microsoft.com/api/mt/emea`).
+
+The reference below covers version `beta`.
+
+## Authentication
+
+Bearer-authenticated. Use the AAD access token whose audience is `api.spaces.skype.com` — the same token used in the [Skype-token exchange](./authentication.md#exchange-for-a-skype-token). The middle tier does not consume Skype tokens, and rejects the aggregator-audience bearer.
+
+```http
+Authorization: Bearer eyJ0eXAi...
+```
 
 ## The User object
+
+A profile record. Used to fill in names that the chat-service aggregator omits from `chats[].members[].friendlyName`.
 
 | Field               | Type    | Description                                                                                                  |
 | ------------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
@@ -26,11 +38,7 @@ A User is a profile record returned by the middle tier (MT). Profile lookups res
 POST /{region}/beta/users/fetchShortProfile
 ```
 
-Resolves a batch of MRIs or AAD object IDs to user profiles. Used to enrich chat rosters when [`Chat.members[].friendlyName`](./chats.md#chatmember) is absent.
-
-### Authentication
-
-Bearer-authenticated. Use the same Azure AD access token whose audience is `api.spaces.skype.com` that is exchanged for the Skype token. See [Authentication](./authentication.md). The middle tier does not consume Skype tokens.
+Resolves a batch of MRIs or AAD object IDs to user profiles. Used to enrich chat rosters when [`ChatMember.friendlyName`](./csa.md#chatmember) is absent.
 
 ### Path parameters
 
@@ -113,3 +121,27 @@ Content-Type: application/json
   ]
 }
 ```
+
+---
+
+## Errors
+
+Error responses use the envelope:
+
+```json
+{
+  "value": { "code": "AuthFailure", "message": "Token rejected." },
+  "status": 401
+}
+```
+
+Branch on `value.code`. Some `400` validation responses use the alternate shape `{ "errorCode": "<string>", "message": "<text>" }` shown above; clients should accept either.
+
+| Code                    | Meaning                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `400 Bad Request`       | Malformed request. The body is `{errorCode, message}` with codes such as `InvalidUserId`.                                            |
+| `401 Unauthorized`      | The bearer token is missing, expired, or has the wrong audience. Only an `api.spaces.skype.com`-audience token is accepted; the aggregator-audience token is rejected. |
+| `403 Forbidden`         | The caller is authenticated but not allowed to perform the action.                                                                   |
+| `404 Not Found`         | The route does not exist for this region. Re-check the `regionGtms.middleTier` value.                                                |
+| `429 Too Many Requests` | Rate limit exceeded. Honor `Retry-After`.                                                                                            |
+| `5xx`                   | Server-side error. Retry with backoff.                                                                                               |

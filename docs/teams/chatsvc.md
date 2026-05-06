@@ -1,8 +1,34 @@
-# Messages
+# Chat service
 
-A Message is a single entry in a [chat](./chats.md). The same collection supports listing existing messages and posting new ones.
+The chat service stores and serves message history. It accepts a Skype token in the `Authentication` header and is hosted on a region-stamped origin advertised in `regionGtms.chatService` after sign-in (e.g. `https://emea.ng.msg.teams.microsoft.com`). A Front Door proxy at `https://teams.microsoft.com/api/chatsvc/{region}` serves identical paths.
+
+The reference below covers version `v1`.
+
+## Authentication
+
+Skype-token authenticated. See [authentication.md](./authentication.md#exchange-for-a-skype-token) for the exchange flow.
+
+```http
+Authentication: skypetoken=eyJhbGci...
+```
+
+The legacy form `X-Skypetoken: <jwt>` is also accepted.
+
+In addition to `Authentication`, requests should include:
+
+```http
+Accept:           application/json
+Content-Type:     application/json   # on requests with a body
+BehaviorOverride: redirectAs404      # surface region redirects as 404
+MS-CV:            <correlation vector>
+User-Agent:       <client identifier>
+```
+
+`MS-CV` is a [correlation vector](https://github.com/microsoft/CorrelationVector). It is echoed in error responses and written to service logs.
 
 ## The Message object
+
+A Message is a single entry in a [chat](./csa.md#the-chat-object). The same collection supports listing existing messages and posting new ones.
 
 ### Common attributes
 
@@ -262,3 +288,60 @@ Wrap the mentioned user's display name in `<at id="...">` (where `id` is the zer
 ```
 
 `properties.mentions` is a JSON-encoded string, not a JSON value.
+
+---
+
+## Errors
+
+Error responses are JSON objects:
+
+```json
+{
+  "errorCode": 911,
+  "message": "Authentication failed.",
+  "standardizedError": {
+    "errorCode": 911,
+    "errorSubCode": 1,
+    "errorDescription": "Authentication failed."
+  }
+}
+```
+
+Branch on `errorCode`. `message` is a human-readable description intended for logs. `standardizedError.errorCode` is always identical to the top-level `errorCode`.
+
+| `errorCode` |  HTTP | Description                                                                                                                                                  |
+| ----------: | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+|       `911` | `401` | Skype token missing, expired, or revoked. Refresh via [`POST /api/authsvc/v1.0/authz`](./authentication.md#exchange-for-a-skype-token) and retry once.        |
+|       `912` | `401` | Skype token signed for a different region. Re-issue against the correct region.                                                                              |
+|      `1000` | `400` | Generic validation failure. Inspect `message`.                                                                                                               |
+|      `1003` | `400` | Body too large.                                                                                                                                              |
+|      `1102` | `400` | Malformed conversation MRI in the path.                                                                                                                      |
+|      `5000` | `500` | Transient backend error. Retry once.                                                                                                                         |
+|      `7000` | `403` | Sender blocked by recipient.                                                                                                                                 |
+|      `7100` | `403` | Caller is not a participant, or a conversation policy prohibits the action.                                                                                  |
+|      `8002` | `404` | Conversation not found, or not visible to the caller.                                                                                                        |
+|      `8003` | `404` | Conversation lives in a different region. Re-discover the service map and retry against the new chat-service URL.                                            |
+|      `8400` | `409` | Duplicate `clientmessageid`. Treat as success; the original message id is in the `Location` header.                                                          |
+|     `19000` | `429` | Throttled. Honor `Retry-After`.                                                                                                                              |
+
+### Region redirects
+
+The chat service redirects requests targeting another region as `301` / `302`. Suppress redirects by sending `BehaviorOverride: redirectAs404` and handle `404` with `errorCode 8003`: re-discover the service map at [`POST /api/authsvc/v1.0/authz`](./authentication.md#exchange-for-a-skype-token) and retry against the new chat-service URL.
+
+### Rate limiting
+
+Throttled responses include:
+
+```http
+Retry-After: 4
+```
+
+Honor `Retry-After`; retrying inside the cooldown extends it.
+
+Approximate send limits:
+
+| Scope              | Typical limit                    |
+| ------------------ | -------------------------------- |
+| Per conversation   | 10 messages / 10 s, 100 / minute |
+| Per caller         | 600 / minute                     |
+| Per caller per day | 30 000                           |

@@ -1,10 +1,24 @@
-# Chats
+# Chat-service aggregator (CSA)
 
-A Chat is a thread of messages returned by the chat-service aggregator (CSA). The same model covers one-to-one chats, federated one-to-one chats with consumer Microsoft accounts, group chats, and meeting chats. Threads are distinguished by `chatType`, `isOneOnOne`, and the prefix of the chat MRI.
+The chat-service aggregator returns the caller's chat list with titles and member rosters, together with the team and channel tree. It is bearer-authenticated and global — not region-stamped. Its primary front is `https://teams.microsoft.com/api/csa/api`; the same service is also advertised as `https://chatsvcagg.teams.microsoft.com` in `regionGtms.chatServiceAggregator`. Both fronts serve identical paths.
 
-CSA does not surface bot chats (`48:bot:`) or system feeds (`48:notifications`, `48:mentions`, …); those remain available through the Skype-token chat service. Team channels are returned in the same response under `teams[].channels[]` rather than in `chats[]`.
+CSA does not return message history and does not accept message sends; for those, use the [chat service](./chatsvc.md). It also excludes bot threads (`48:bot:`) and system feeds (`48:notifications`, `48:mentions`, …); those remain available through the chat service.
+
+The reference below covers version `v1`.
+
+## Authentication
+
+Bearer-authenticated. The `Authentication: skypetoken=...` header used by the chat service is rejected. See [authentication.md](./authentication.md#aggregator-audience-access-token) for the AAD access-token mint.
+
+```http
+Authorization: Bearer eyJ0eXAi...
+```
+
+CSA does not require `BehaviorOverride`.
 
 ## The Chat object
+
+A Chat is a thread of messages. The same model covers one-to-one chats, federated one-to-one chats with consumer Microsoft accounts, group chats, and meeting chats. Threads are distinguished by `chatType`, `isOneOnOne`, and the prefix of the chat MRI. Team channels are returned in the same response under `teams[].channels[]` rather than in `chats[]`.
 
 ### Common attributes
 
@@ -88,7 +102,7 @@ Present only when `chatType` is `meeting`.
 
 ### LastMessage
 
-A summary of the chat's most recent message. Distinct from the [Message](./messages.md#the-message-object) returned by the chat-service messages endpoint; the field set is smaller and the JSON keys differ in case.
+A summary of the chat's most recent message. Distinct from the [Message](./chatsvc.md#the-message-object) returned by the chat service; the field set is smaller and the JSON keys differ in case.
 
 | Field                  | Type    | Description                                                                                       |
 | ---------------------- | ------- | ------------------------------------------------------------------------------------------------- |
@@ -119,11 +133,7 @@ A summary of the chat's most recent message. Distinct from the [Message](./messa
 GET /v1/teams/users/me
 ```
 
-Returns the caller's chats together with their team list and metadata. Hosted on the chat-service aggregator at `https://teams.microsoft.com/api/csa/api`, not the regional chat-service host. The `regionGtms` map advertises the aggregator's underlying service at `https://chatsvcagg.teams.microsoft.com`; both fronts serve identical paths. The aggregator is global and not region-stamped.
-
-### Authentication
-
-The aggregator is bearer-authenticated. The `Authentication: skypetoken=...` header used by the chat service is rejected. Acquire an Azure AD access token whose audience is `chatsvcagg.teams.microsoft.com` and pass it as `Authorization: Bearer <jwt>`. See [Authentication](./authentication.md#aggregator-bearer-token).
+Returns the caller's chats together with their team list and metadata.
 
 ### Query parameters
 
@@ -241,3 +251,18 @@ Authorization: Bearer eyJ0eXAi...
   }
 }
 ```
+
+---
+
+## Errors
+
+CSA returns conventional HTTP status codes. There is no documented JSON error envelope; clients should branch on the HTTP status.
+
+| Code                    | Meaning                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200 OK`                | The request succeeded.                                                                                                                                                   |
+| `400 Bad Request`       | Malformed query parameters.                                                                                                                                              |
+| `401 Unauthorized`      | The bearer token is missing, expired, or has the wrong audience. The `api.spaces.skype.com` token is rejected; only an `chatsvcagg.teams.microsoft.com`-audience token is accepted. |
+| `403 Forbidden`         | The caller is authenticated but not licensed for Teams in this tenant.                                                                                                   |
+| `429 Too Many Requests` | Rate limit exceeded. Honor `Retry-After`.                                                                                                                                |
+| `5xx`                   | Server-side error. Retry with backoff.                                                                                                                                   |
