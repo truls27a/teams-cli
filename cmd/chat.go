@@ -156,6 +156,18 @@ var chatViewCmd = &cobra.Command{
 		today := time.Now().Format("2006-01-02")
 		rows := make([]row, 0, len(msgs))
 		nameWidth := 0
+		mriToName := map[string]string{}
+		extractMRI := func(from string) string {
+			if i := strings.LastIndex(from, "/"); i >= 0 {
+				return from[i+1:]
+			}
+			return from
+		}
+		for _, m := range msgs {
+			if m.From != "" && m.IMDisplayName != "" {
+				mriToName[extractMRI(m.From)] = m.IMDisplayName
+			}
+		}
 		for _, m := range msgs {
 			if strings.HasPrefix(m.Messagetype, "Control/") || strings.HasPrefix(m.Messagetype, "ThreadActivity/") {
 				continue
@@ -198,7 +210,7 @@ var chatViewCmd = &cobra.Command{
 			if n := len([]rune(name)); n > nameWidth {
 				nameWidth = n
 			}
-			rows = append(rows, row{name, when, renderContent(m.Content, m.Messagetype), flag, deleted, edited, raw})
+			rows = append(rows, row{name, when, renderContent(m.Content, m.Messagetype, mriToName), flag, deleted, edited, raw})
 		}
 
 		if jsonOutput {
@@ -287,13 +299,50 @@ func fetchAllMessages(ctx context.Context, client *teams.Client, convID string) 
 }
 
 var (
-	tagRE    = regexp.MustCompile(`<[^>]+>`)
-	anchorRE = regexp.MustCompile(`(?is)<a\b[^>]*\bhref="([^"]+)"[^>]*>(.*?)</a>`)
+	tagRE        = regexp.MustCompile(`<[^>]+>`)
+	anchorRE     = regexp.MustCompile(`(?is)<a\b[^>]*\bhref="([^"]+)"[^>]*>(.*?)</a>`)
+	blockquoteRE = regexp.MustCompile(`(?is)<blockquote\b[^>]*>(.*?)</blockquote>\s*`)
+	quoteAuthorRE = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*>(.*?)</(?:strong|span|b)>`)
+	quoteAuthorMRIRE = regexp.MustCompile(`(?is)<(?:strong|span|b)\b[^>]*\bitemprop="mri"[^>]*\bitemid="([^"]+)"`)
+	quotePreviewRE = regexp.MustCompile(`(?is)<p\b[^>]*\bitemprop="preview"[^>]*>(.*?)</p>`)
 )
 
-func renderContent(content, messagetype string) string {
+func renderQuote(inner string, names map[string]string) string {
+	author := ""
+	if m := quoteAuthorMRIRE.FindStringSubmatch(inner); m != nil {
+		if n := names[m[1]]; n != "" {
+			author = n
+		}
+	}
+	if author == "" {
+		if m := quoteAuthorRE.FindStringSubmatch(inner); m != nil {
+			author = strings.TrimSpace(tagRE.ReplaceAllString(m[1], ""))
+		}
+	}
+	preview := ""
+	if m := quotePreviewRE.FindStringSubmatch(inner); m != nil {
+		preview = strings.TrimSpace(tagRE.ReplaceAllString(m[1], ""))
+	}
+	if preview == "" {
+		preview = strings.TrimSpace(tagRE.ReplaceAllString(inner, ""))
+		preview = strings.Join(strings.Fields(preview), " ")
+	}
+	if preview == "" {
+		return ""
+	}
+	if author != "" && author != "Display Name" {
+		return "> " + author + ": " + preview + "\n"
+	}
+	return "> " + preview + "\n"
+}
+
+func renderContent(content, messagetype string, names map[string]string) string {
 	if messagetype == "RichText/Html" {
-		s := anchorRE.ReplaceAllStringFunc(content, func(m string) string {
+		s := blockquoteRE.ReplaceAllStringFunc(content, func(m string) string {
+			sub := blockquoteRE.FindStringSubmatch(m)
+			return renderQuote(sub[1], names)
+		})
+		s = anchorRE.ReplaceAllStringFunc(s, func(m string) string {
 			sub := anchorRE.FindStringSubmatch(m)
 			href, text := sub[1], tagRE.ReplaceAllString(sub[2], "")
 			text = strings.TrimSpace(text)
@@ -307,6 +356,9 @@ func renderContent(content, messagetype string) string {
 			"&amp;", "&", "&lt;", "<", "&gt;", ">",
 			"&quot;", `"`, "&#39;", "'", "&nbsp;", " ",
 		).Replace(s)
+		for strings.Contains(s, "\n\n\n") {
+			s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
+		}
 		return strings.TrimSpace(s)
 	}
 	return strings.TrimSpace(content)
