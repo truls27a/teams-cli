@@ -213,7 +213,7 @@ var chatViewCmd = &cobra.Command{
 			if n := len([]rune(name)); n > nameWidth {
 				nameWidth = n
 			}
-			body := renderContent(m.Content, m.Messagetype, mriToName)
+			body := renderContent(m.Content, m.Messagetype, mriToName, !jsonOutput)
 			if attach := renderAttachments(m.Properties); attach != "" {
 				if body == "" {
 					body = attach
@@ -324,6 +324,15 @@ var (
 	attachmentRE     = regexp.MustCompile(`(?is)<attachment\b[^>]*>.*?</attachment>`)
 	attrAltRE        = regexp.MustCompile(`(?is)\balt="([^"]*)"`)
 	attrItemtypeRE   = regexp.MustCompile(`(?is)\bitemtype="([^"]*)"`)
+	olRE             = regexp.MustCompile(`(?is)<ol\b[^>]*>(.*?)</ol>`)
+	ulRE             = regexp.MustCompile(`(?is)<ul\b[^>]*>(.*?)</ul>`)
+	liRE             = regexp.MustCompile(`(?is)<li\b[^>]*>(.*?)</li>`)
+	pRE              = regexp.MustCompile(`(?is)<p\b[^>]*>(.*?)</p>`)
+	brRE             = regexp.MustCompile(`(?i)<br\s*/?>`)
+	headingRE        = regexp.MustCompile(`(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>`)
+	boldRE           = regexp.MustCompile(`(?is)<(b|strong)\b[^>]*>(.*?)</(?:b|strong)>`)
+	italicRE         = regexp.MustCompile(`(?is)<(i|em)\b[^>]*>(.*?)</(?:i|em)>`)
+	blankLinesRE     = regexp.MustCompile(`(?:[ \t]*\n){2,}`)
 )
 
 func mediaLabelFromType(t string) string {
@@ -387,7 +396,26 @@ func renderQuote(inner string, names map[string]string) string {
 	return "> " + preview + "\n"
 }
 
-func renderContent(content, messagetype string, names map[string]string) string {
+func renderList(inner string, ordered bool) string {
+	items := liRE.FindAllStringSubmatch(inner, -1)
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n")
+	for i, m := range items {
+		if ordered {
+			fmt.Fprintf(&b, "%d. ", i+1)
+		} else {
+			b.WriteString("- ")
+		}
+		b.WriteString(strings.TrimSpace(m[1]))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func renderContent(content, messagetype string, names map[string]string, ansi bool) string {
 	if messagetype == "RichText/Html" {
 		s := blockquoteRE.ReplaceAllStringFunc(content, func(m string) string {
 			sub := blockquoteRE.FindStringSubmatch(m)
@@ -432,14 +460,43 @@ func renderContent(content, messagetype string, names map[string]string) string 
 			return "[image: " + alt + "]"
 		})
 		s = attachmentRE.ReplaceAllString(s, "[attachment]")
+
+		s = olRE.ReplaceAllStringFunc(s, func(m string) string {
+			return renderList(olRE.FindStringSubmatch(m)[1], true)
+		})
+		s = ulRE.ReplaceAllStringFunc(s, func(m string) string {
+			return renderList(ulRE.FindStringSubmatch(m)[1], false)
+		})
+		s = headingRE.ReplaceAllStringFunc(s, func(m string) string {
+			txt := strings.TrimSpace(headingRE.FindStringSubmatch(m)[1])
+			if ansi {
+				return "\n\n\x1b[1m" + txt + "\x1b[22m\n\n"
+			}
+			return "\n\n**" + txt + "**\n\n"
+		})
+		s = pRE.ReplaceAllString(s, "$1\n\n")
+		s = brRE.ReplaceAllString(s, "\n")
+		s = boldRE.ReplaceAllStringFunc(s, func(m string) string {
+			txt := boldRE.FindStringSubmatch(m)[2]
+			if ansi {
+				return "\x1b[1m" + txt + "\x1b[22m"
+			}
+			return "**" + txt + "**"
+		})
+		s = italicRE.ReplaceAllStringFunc(s, func(m string) string {
+			txt := italicRE.FindStringSubmatch(m)[2]
+			if ansi {
+				return "\x1b[3m" + txt + "\x1b[23m"
+			}
+			return "*" + txt + "*"
+		})
 		s = tagRE.ReplaceAllString(s, "")
 		s = strings.NewReplacer(
 			"&amp;", "&", "&lt;", "<", "&gt;", ">",
 			"&quot;", `"`, "&#39;", "'", "&nbsp;", " ",
 		).Replace(s)
-		for strings.Contains(s, "\n\n\n") {
-			s = strings.ReplaceAll(s, "\n\n\n", "\n\n")
-		}
+		s = strings.ReplaceAll(s, "\r", "")
+		s = blankLinesRE.ReplaceAllString(s, "\n\n")
 		s = strings.TrimSpace(s)
 		if s == "" {
 			if label := messagetypeLabel(messagetype); label != "" {
