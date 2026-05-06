@@ -59,21 +59,20 @@ var chatListCmd = &cobra.Command{
 			type item struct {
 				ID             int    `json:"id"`
 				Name           string `json:"name"`
-				Type           string `json:"type"`
 				ConversationID string `json:"conversation_id"`
 			}
 			out := make([]item, 0, len(chats))
 			for i, c := range chats {
-				out = append(out, item{i + 1, chatDisplay(c, client.SelfMRI, names), chatType(c), c.ID})
+				out = append(out, item{i + 1, chatDisplay(c, client.SelfMRI, names), c.ID})
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(out)
 		}
 
-		fmt.Printf("%-4s  %-8s  %s\n", "ID", "TYPE", "NAME")
+		fmt.Printf("%-4s  %s\n", "ID", "NAME")
 		for i, c := range chats {
-			fmt.Printf("%-4d  %-8s  %s\n", i+1, chatType(c), chatDisplay(c, client.SelfMRI, names))
+			fmt.Printf("%-4d  %s\n", i+1, chatDisplay(c, client.SelfMRI, names))
 		}
 		return nil
 	},
