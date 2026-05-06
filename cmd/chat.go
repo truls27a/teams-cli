@@ -11,12 +11,58 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unicode/utf8"
+	"unsafe"
 
 	"teams/teams"
 
 	"github.com/spf13/cobra"
 )
+
+func termWidth() int {
+	type winsize struct{ Row, Col, X, Y uint16 }
+	ws := winsize{}
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdout.Fd(), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&ws)))
+	if errno != 0 || ws.Col == 0 {
+		return 80
+	}
+	return int(ws.Col)
+}
+
+func wrapLine(s string, width int) []string {
+	if s == "" {
+		return []string{""}
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	var out []string
+	cur := ""
+	curW := 0
+	for _, w := range words {
+		ww := utf8.RuneCountInString(w)
+		if curW == 0 {
+			cur = w
+			curW = ww
+			continue
+		}
+		if curW+1+ww > width {
+			out = append(out, cur)
+			cur = w
+			curW = ww
+			continue
+		}
+		cur += " " + w
+		curW += 1 + ww
+	}
+	if cur != "" {
+		out = append(out, cur)
+	}
+	return out
+}
 
 var chatCmd = &cobra.Command{
 	Use:   "chat",
@@ -234,12 +280,21 @@ var chatViewCmd = &cobra.Command{
 			enc.SetIndent("", "  ")
 			return enc.Encode(out)
 		}
+		width := termWidth()
+		bodyW := width - 2
+		if bodyW < 20 {
+			bodyW = 20
+		}
 		for i, r := range rows {
 			if i > 0 {
 				fmt.Println()
 			}
 			fmt.Printf("%s, %s%s\n", r.name, r.when, r.flag)
-			fmt.Println(r.body)
+			for _, ln := range strings.Split(r.body, "\n") {
+				for _, wrapped := range wrapLine(ln, bodyW) {
+					fmt.Println("  " + wrapped)
+				}
+			}
 		}
 		return nil
 	},
