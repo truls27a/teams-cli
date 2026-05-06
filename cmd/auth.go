@@ -181,7 +181,7 @@ var authLoginCmd = &cobra.Command{
 			refresh = csa.RefreshToken
 		}
 		now := time.Now()
-		return saveAuth(&storedAuth{
+		if err := saveAuth(&storedAuth{
 			RefreshToken:     refresh,
 			SpacesToken:      tok.AccessToken,
 			SpacesExpiry:     now.Add(time.Duration(tok.ExpiresIn) * time.Second),
@@ -192,7 +192,11 @@ var authLoginCmd = &cobra.Command{
 			CSAToken:         csa.AccessToken,
 			CSAExpiry:        now.Add(time.Duration(csa.ExpiresIn) * time.Second),
 			SelfMRI:          resolveSelfMRI(csa.AccessToken, skype.SkypeToken),
-		})
+		}); err != nil {
+			return err
+		}
+		fmt.Println("Successfully logged in.")
+		return nil
 	},
 }
 
