@@ -272,11 +272,21 @@ var chatSendCmd = &cobra.Command{
 			return err
 		}
 		clientMsgID := fmt.Sprintf("%d%03d", time.Now().UnixMilli(), rand.IntN(1000))
+		displayName := ""
+		if users, err := client.FetchShortProfile(context.Background(), []string{client.SelfMRI}); err == nil {
+			for _, u := range users {
+				if u.MRI == client.SelfMRI {
+					displayName = u.DisplayName
+					break
+				}
+			}
+		}
 		_, err = client.SendMessage(context.Background(), convID, teams.SendMessageRequest{
 			Content:         args[1],
 			Messagetype:     "RichText/Html",
 			Contenttype:     "Text",
 			ClientMessageID: clientMsgID,
+			IMDisplayName:   displayName,
 		})
 		if err != nil {
 			return err
