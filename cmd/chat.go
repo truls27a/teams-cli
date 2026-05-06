@@ -158,6 +158,7 @@ var chatViewCmd = &cobra.Command{
 			name, when, body, flag string
 			deleted, edited        bool
 			whenISO                string
+			date                   string
 		}
 		rows := make([]row, 0, len(msgs))
 		nameWidth := 0
@@ -183,8 +184,19 @@ var chatViewCmd = &cobra.Command{
 				raw = m.ComposeTime
 			}
 			when := raw
+			date := ""
 			if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-				when = t.Local().Format("15:04")
+				lt := t.Local()
+				when = lt.Format("15:04")
+				today := time.Now().Local()
+				startOfToday := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, today.Location())
+				startOfDay := time.Date(lt.Year(), lt.Month(), lt.Day(), 0, 0, 0, 0, lt.Location())
+				daysAgo := int(startOfToday.Sub(startOfDay).Hours() / 24)
+				if daysAgo >= 0 && daysAgo < 7 {
+					date = lt.Format("Monday")
+				} else {
+					date = lt.Format("2006-01-02")
+				}
 			}
 			if n := len(when); n > timeWidth {
 				timeWidth = n
@@ -223,7 +235,7 @@ var chatViewCmd = &cobra.Command{
 					body = body + "\n" + attach
 				}
 			}
-			rows = append(rows, row{name, when, body, flag, deleted, edited, raw})
+			rows = append(rows, row{name, when, body, flag, deleted, edited, raw, date})
 		}
 
 		if jsonOutput {
@@ -249,7 +261,14 @@ var chatViewCmd = &cobra.Command{
 			nameWidth = 4
 		}
 		fmt.Printf("%-*s  %-*s  %s\n", timeWidth, "TIME", nameWidth, "NAME", "MESSAGE")
+		lastDate := ""
 		for _, r := range rows {
+			if r.date != "" && r.date != lastDate {
+				fmt.Println()
+				fmt.Println(r.date)
+				fmt.Println()
+				lastDate = r.date
+			}
 			lines := strings.Split(r.body, "\n")
 			fmt.Printf("%-*s  %-*s  %s%s\n", timeWidth, r.when, nameWidth, truncate(r.name, nameWidth), lines[0], r.flag)
 			for _, line := range lines[1:] {
