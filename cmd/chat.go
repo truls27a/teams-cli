@@ -70,9 +70,13 @@ var chatListCmd = &cobra.Command{
 			return enc.Encode(out)
 		}
 
-		fmt.Printf("%-4s  %s\n", "ID", "NAME")
+		idW := len(strconv.Itoa(len(chats)))
+		if idW < 2 {
+			idW = 2
+		}
+		fmt.Printf("%-*s  %s\n", idW, "ID", "NAME")
 		for i, c := range chats {
-			fmt.Printf("%-4d  %s\n", i+1, chatDisplay(c, client.SelfMRI, names))
+			fmt.Printf("%-*d  %s\n", idW, i+1, chatDisplay(c, client.SelfMRI, names))
 		}
 		return nil
 	},
