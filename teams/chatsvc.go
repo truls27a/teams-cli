@@ -66,14 +66,6 @@ func (c *Client) ListMessages(ctx context.Context, conversationID string, pageSi
 	return resp.Messages, resp.Metadata.SyncState, nil
 }
 
-func (c *Client) ListMessagesPage(ctx context.Context, syncStateURL string) ([]Message, string, error) {
-	var resp listMessagesResponse
-	if err := c.doChatSvc(ctx, "GET", syncStateURL, nil, &resp); err != nil {
-		return nil, "", err
-	}
-	return resp.Messages, resp.Metadata.SyncState, nil
-}
-
 func (c *Client) SendMessage(ctx context.Context, conversationID string, req SendMessageRequest) (*SendMessageResponse, error) {
 	path := "/v1/users/ME/conversations/" + url.PathEscape(conversationID) + "/messages"
 	var resp SendMessageResponse

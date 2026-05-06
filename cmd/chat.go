@@ -114,10 +114,7 @@ func resolveMissingNames(ctx context.Context, client *teams.Client, chats []team
 	return out
 }
 
-var (
-	viewLimit int
-	viewAll   bool
-)
+var viewLimit int
 
 var chatViewCmd = &cobra.Command{
 	Use:   "view <conversation-id>",
@@ -128,21 +125,16 @@ var chatViewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var msgs []teams.Message
-		if viewAll {
-			msgs, err = fetchAllMessages(context.Background(), client, args[0])
-		} else {
-			pageSize := viewLimit
-			if pageSize > 200 {
-				pageSize = 200
-			}
-			msgs, _, err = client.ListMessages(context.Background(), args[0], pageSize)
-			if err == nil && len(msgs) > viewLimit {
-				msgs = msgs[:viewLimit]
-			}
+		pageSize := viewLimit
+		if pageSize > 200 {
+			pageSize = 200
 		}
+		msgs, _, err := client.ListMessages(context.Background(), args[0], pageSize)
 		if err != nil {
 			return err
+		}
+		if len(msgs) > viewLimit {
+			msgs = msgs[:viewLimit]
 		}
 
 		sort.SliceStable(msgs, func(i, j int) bool {
@@ -287,24 +279,7 @@ var chatSendCmd = &cobra.Command{
 func init() {
 	chatListCmd.Flags().BoolVar(&listAll, "all", false, "include meeting threads and system feeds")
 	chatViewCmd.Flags().IntVarP(&viewLimit, "limit", "n", 20, "number of messages to show")
-	chatViewCmd.Flags().BoolVar(&viewAll, "all", false, "fetch all messages")
 	chatCmd.AddCommand(chatListCmd, chatViewCmd, chatSendCmd)
-}
-
-func fetchAllMessages(ctx context.Context, client *teams.Client, convID string) ([]teams.Message, error) {
-	msgs, syncState, err := client.ListMessages(ctx, convID, 200)
-	if err != nil {
-		return nil, err
-	}
-	for syncState != "" {
-		page, next, err := client.ListMessagesPage(ctx, syncState)
-		if err != nil {
-			return nil, err
-		}
-		msgs = append(msgs, page...)
-		syncState = next
-	}
-	return msgs, nil
 }
 
 var (
