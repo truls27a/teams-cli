@@ -139,7 +139,7 @@ type chatsResponse struct {
 }
 
 func (c *Client) ListChats(ctx context.Context) ([]Chat, error) {
-	const path = "/v1/teams/users/me?isPrefetch=false&enableMembershipSummary=true"
+	const path = "/v1/teams/users/me?isPrefetch=false"
 	var resp chatsResponse
 	if err := c.doCSA(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, err
