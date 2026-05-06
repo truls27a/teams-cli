@@ -255,9 +255,10 @@ var chatViewCmd = &cobra.Command{
 				lastDate = r.date
 			}
 			lines := strings.Split(r.body, "\n")
-			fmt.Printf("%s  %s  %s%s\n", r.when, r.name, lines[0], r.flag)
+			fmt.Printf("[%s] <%s> %s%s\n", r.when, r.name, lines[0], r.flag)
+			indent := strings.Repeat(" ", len([]rune(r.when))+len([]rune(r.name))+5)
 			for _, line := range lines[1:] {
-				fmt.Println(line)
+				fmt.Printf("%s%s\n", indent, line)
 			}
 		}
 		return nil
