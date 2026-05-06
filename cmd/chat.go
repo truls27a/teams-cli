@@ -155,7 +155,6 @@ var chatViewCmd = &cobra.Command{
 			name, when, body, flag string
 			deleted, edited        bool
 			whenISO                string
-			reactions              []reactionCount
 		}
 		today := time.Now().Format("2006-01-02")
 		rows := make([]row, 0, len(msgs))
@@ -222,21 +221,20 @@ var chatViewCmd = &cobra.Command{
 					body = body + "\n" + attach
 				}
 			}
-			rows = append(rows, row{name, when, body, flag, deleted, edited, raw, collectReactions(m.Properties)})
+			rows = append(rows, row{name, when, body, flag, deleted, edited, raw})
 		}
 
 		if jsonOutput {
 			type item struct {
-				Name      string           `json:"name"`
-				Time      string           `json:"time"`
-				Body      string           `json:"body"`
-				Deleted   bool             `json:"deleted,omitempty"`
-				Edited    bool             `json:"edited,omitempty"`
-				Reactions []reactionCount  `json:"reactions,omitempty"`
+				Name    string `json:"name"`
+				Time    string `json:"time"`
+				Body    string `json:"body"`
+				Deleted bool   `json:"deleted,omitempty"`
+				Edited  bool   `json:"edited,omitempty"`
 			}
 			out := make([]item, 0, len(rows))
 			for _, r := range rows {
-				out = append(out, item{r.name, r.whenISO, r.body, r.deleted, r.edited, r.reactions})
+				out = append(out, item{r.name, r.whenISO, r.body, r.deleted, r.edited})
 			}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
@@ -251,18 +249,9 @@ var chatViewCmd = &cobra.Command{
 		fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "NAME", "TIME", "MESSAGE")
 		for _, r := range rows {
 			lines := strings.Split(r.body, "\n")
-			suffix := r.flag + formatReactions(r.reactions)
-			if len(lines) == 1 {
-				fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], suffix)
-				continue
-			}
 			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
-			for i, line := range lines[1:] {
-				if i == len(lines)-2 {
-					fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, "", "", line, formatReactions(r.reactions))
-				} else {
-					fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
-				}
+			for _, line := range lines[1:] {
+				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
 			}
 		}
 		return nil
@@ -598,89 +587,6 @@ func renderAttachments(props map[string]any) string {
 		}
 	}
 	return strings.Join(parts, " ")
-}
-
-type reactionCount struct {
-	Key   string `json:"key"`
-	Count int    `json:"count"`
-}
-
-func collectReactions(props map[string]any) []reactionCount {
-	raw, ok := props["emotions"].([]any)
-	if !ok || len(raw) == 0 {
-		return nil
-	}
-	out := make([]reactionCount, 0, len(raw))
-	for _, e := range raw {
-		m, ok := e.(map[string]any)
-		if !ok {
-			continue
-		}
-		key, _ := m["key"].(string)
-		users, _ := m["users"].([]any)
-		if key == "" || len(users) == 0 {
-			continue
-		}
-		out = append(out, reactionCount{Key: key, Count: len(users)})
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Count != out[j].Count {
-			return out[i].Count > out[j].Count
-		}
-		return out[i].Key < out[j].Key
-	})
-	return out
-}
-
-func reactionEmoji(key string) string {
-	switch key {
-	case "like":
-		return "👍"
-	case "heart":
-		return "❤️"
-	case "laugh":
-		return "😆"
-	case "surprised":
-		return "😮"
-	case "sad":
-		return "😢"
-	case "angry":
-		return "😠"
-	case "praise":
-		return "🙌"
-	case "fire":
-		return "🔥"
-	case "giggle":
-		return "🤭"
-	case "party":
-		return "🎉"
-	case "skull":
-		return "💀"
-	}
-	if i := strings.Index(key, ";"); i >= 0 {
-		key = key[:i]
-	}
-	if i := strings.Index(key, "_"); i > 0 {
-		if n, err := strconv.ParseInt(key[:i], 16, 32); err == nil && n > 0x20 {
-			return string(rune(n))
-		}
-	}
-	return ":" + key + ":"
-}
-
-func formatReactions(rs []reactionCount) string {
-	if len(rs) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, r := range rs {
-		if r.Count == 1 {
-			fmt.Fprintf(&b, "  <%s>", reactionEmoji(r.Key))
-		} else {
-			fmt.Fprintf(&b, "  <%s %d>", reactionEmoji(r.Key), r.Count)
-		}
-	}
-	return b.String()
 }
 
 func fileKind(ext, name string) string {
