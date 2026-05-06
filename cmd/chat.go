@@ -251,12 +251,18 @@ var chatViewCmd = &cobra.Command{
 		fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "NAME", "TIME", "MESSAGE")
 		for _, r := range rows {
 			lines := strings.Split(r.body, "\n")
-			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
-			for _, line := range lines[1:] {
-				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
+			suffix := r.flag + formatReactions(r.reactions)
+			if len(lines) == 1 {
+				fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], suffix)
+				continue
 			}
-			if s := formatReactions(r.reactions); s != "" {
-				fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", s)
+			fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, truncate(r.name, nameWidth), r.when, lines[0], r.flag)
+			for i, line := range lines[1:] {
+				if i == len(lines)-2 {
+					fmt.Printf("%-*s  %-11s  %s%s\n", nameWidth, "", "", line, formatReactions(r.reactions))
+				} else {
+					fmt.Printf("%-*s  %-11s  %s\n", nameWidth, "", "", line)
+				}
 			}
 		}
 		return nil
@@ -659,22 +665,22 @@ func reactionEmoji(key string) string {
 			return string(rune(n))
 		}
 	}
-	return key
+	return ":" + key + ":"
 }
 
 func formatReactions(rs []reactionCount) string {
 	if len(rs) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(rs))
+	var b strings.Builder
 	for _, r := range rs {
 		if r.Count == 1 {
-			parts = append(parts, fmt.Sprintf("<%s>", reactionEmoji(r.Key)))
+			fmt.Fprintf(&b, "  <%s>", reactionEmoji(r.Key))
 		} else {
-			parts = append(parts, fmt.Sprintf("<%s %d>", reactionEmoji(r.Key), r.Count))
+			fmt.Fprintf(&b, "  <%s %d>", reactionEmoji(r.Key), r.Count)
 		}
 	}
-	return strings.Join(parts, "  ")
+	return b.String()
 }
 
 func fileKind(ext, name string) string {
