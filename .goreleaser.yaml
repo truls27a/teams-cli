@@ -1,0 +1,52 @@
+version: 2
+
+project_name: teams-cli
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: teams
+    binary: teams
+    main: .
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: teams
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+
+brews:
+  - name: teams-cli
+    repository:
+      owner: truls27a
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/truls27a/teams-cli"
+    description: "Microsoft Teams CLI"
+    license: "MIT"
+    install: |
+      bin.install "teams"
+    test: |
+      system "#{bin}/teams", "--help"
