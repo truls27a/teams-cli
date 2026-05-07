@@ -96,7 +96,47 @@ var watchCmd = &cobra.Command{
 				}
 				return nil
 			}
-			names := resolveMissingNames(ctx, client, chats)
+			seen := map[string]bool{}
+			var mris []string
+			add := func(mri string) {
+				if mri == "" || mri == client.SelfMRI || seen[mri] {
+					return
+				}
+				if !strings.HasPrefix(mri, "8:orgid:") && !strings.HasPrefix(mri, "28:") {
+					return
+				}
+				seen[mri] = true
+				mris = append(mris, mri)
+			}
+			for _, c := range chats {
+				add(c.Creator)
+				if i := strings.Index(c.ID, "@unq.gbl.spaces"); i > 0 {
+					for part := range strings.SplitSeq(strings.TrimPrefix(c.ID[:i], "19:"), "_") {
+						if len(part) == 36 {
+							add("8:orgid:" + part)
+						}
+					}
+				}
+				for _, m := range c.Members {
+					if m.FriendlyName == "" {
+						add(m.MRI)
+					}
+				}
+			}
+			var names map[string]string
+			if len(mris) > 0 {
+				users, err := client.FetchShortProfile(ctx, mris)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "warning: name resolution via middle tier failed: %v\n", err)
+				} else {
+					names = make(map[string]string, len(users))
+					for _, u := range users {
+						if u.DisplayName != "" {
+							names[u.MRI] = u.DisplayName
+						}
+					}
+				}
+			}
 
 			for _, c := range chats {
 				if c.IsEmptyConversation || c.LastMessage == nil || strings.HasPrefix(c.ID, "19:meeting_") {
@@ -117,8 +157,16 @@ var watchCmd = &cobra.Command{
 					fmt.Fprintf(os.Stderr, "watch %s: %v\n", c.ID, err)
 					continue
 				}
+				parseTime := func(m teams.Message) time.Time {
+					raw := m.OriginalArrivalTime
+					if raw == "" {
+						raw = m.ComposeTime
+					}
+					t, _ := time.Parse(time.RFC3339Nano, raw)
+					return t
+				}
 				sort.SliceStable(msgs, func(i, j int) bool {
-					return messageTime(msgs[i]).Before(messageTime(msgs[j]))
+					return parseTime(msgs[i]).Before(parseTime(msgs[j]))
 				})
 				idx := -1
 				for i, m := range msgs {
@@ -128,14 +176,85 @@ var watchCmd = &cobra.Command{
 					}
 				}
 
-				threadName := chatDisplay(c, client.SelfMRI, names)
-				isGroup := chatType(c) == "group"
+				threadName := func() string {
+					if c.Title != nil && *c.Title != "" {
+						return *c.Title
+					}
+					if c.MeetingInformation != nil && c.MeetingInformation.Subject != "" {
+						return c.MeetingInformation.Subject
+					}
+					var memberNames []string
+					for _, m := range c.Members {
+						if m.MRI == client.SelfMRI {
+							continue
+						}
+						name := m.FriendlyName
+						if name == "" {
+							name = names[m.MRI]
+						}
+						if name == "" {
+							continue
+						}
+						memberNames = append(memberNames, name)
+					}
+					isGrp := c.ChatType == "chat" && !c.IsOneOnOne
+					if len(memberNames) > 0 {
+						out := memberNames
+						if isGrp {
+							out = make([]string, len(memberNames))
+							for i, n := range memberNames {
+								n = strings.TrimSpace(n)
+								if j := strings.IndexAny(n, " \t"); j > 0 {
+									n = n[:j]
+								}
+								out[i] = n
+							}
+						}
+						if len(out) <= 3 {
+							return strings.Join(out, ", ")
+						}
+						return fmt.Sprintf("%s, %s, %s +%d", out[0], out[1], out[2], len(out)-3)
+					}
+					if c.Creator != "" && c.Creator != client.SelfMRI {
+						if n := names[c.Creator]; n != "" {
+							return n
+						}
+					}
+					if i := strings.Index(c.ID, "@unq.gbl.spaces"); i > 0 {
+						for part := range strings.SplitSeq(strings.TrimPrefix(c.ID[:i], "19:"), "_") {
+							if len(part) == 36 {
+								mri := "8:orgid:" + part
+								if mri != client.SelfMRI {
+									if n := names[mri]; n != "" {
+										return n
+									}
+								}
+							}
+						}
+					}
+					if c.LastMessage != nil && !c.IsLastMessageFromMe && c.LastMessage.IMDisplayName != "" {
+						return c.LastMessage.IMDisplayName
+					}
+					switch {
+					case c.ChatType == "meeting":
+						return "Meeting chat"
+					case c.IsOneOnOne:
+						return "Direct chat"
+					case c.ChatType == "chat":
+						if n := len(c.Members); n > 0 {
+							return fmt.Sprintf("Group chat (%d people)", n)
+						}
+						return "Group chat"
+					}
+					return "Conversation"
+				}()
+				isGroup := c.ChatType == "chat" && !c.IsOneOnOne
 
 				fire := func(sender, content, messagetype, suffix string) {
 					if sender == "" {
 						sender = "Someone"
 					}
-					body := renderContent(content, messagetype, nil)
+					body := htmlToPlainText(content, messagetype, nil)
 					body = strings.ReplaceAll(body, "*", "")
 					body = strings.ReplaceAll(body, "_", "")
 					body = strings.Join(strings.Fields(body), " ")
