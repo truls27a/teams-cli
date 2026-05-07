@@ -1,6 +1,20 @@
 package teams
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
+
+type APIError struct {
+	Method string
+	URL    string
+	Status int
+	Body   string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("%s %s: %d %s", e.Method, e.URL, e.Status, e.Body)
+}
 
 type Client struct {
 	MessagingBaseURL string

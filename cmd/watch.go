@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"teams/teams"
 )
 
 var (
@@ -80,7 +82,8 @@ var watchCmd = &cobra.Command{
 			chats, err := client.ListChats(ctx)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "watch tick: %v\n", err)
-				if strings.Contains(err.Error(), ": 401 ") || strings.Contains(err.Error(), ": 403 ") {
+				var apiErr *teams.APIError
+				if errors.As(err, &apiErr) && (apiErr.Status == 401 || apiErr.Status == 403) {
 					nc, rerr := loadClient()
 					if rerr != nil {
 						return fmt.Errorf("auth dead: %w", rerr)

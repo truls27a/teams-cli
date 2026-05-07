@@ -117,7 +117,7 @@ func (c *Client) doChatSvc(ctx context.Context, method, pathOrURL string, body a
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s %s: %d %s", method, url, resp.StatusCode, strings.TrimSpace(string(b)))
+		return &APIError{method, url, resp.StatusCode, strings.TrimSpace(string(b))}
 	}
 
 	if out != nil {

@@ -73,7 +73,7 @@ func (c *Client) doMT(ctx context.Context, method, path string, body any, out an
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("%s %s: %d %s", method, url, resp.StatusCode, strings.TrimSpace(string(b)))
+		return &APIError{method, url, resp.StatusCode, strings.TrimSpace(string(b))}
 	}
 
 	if out != nil {
