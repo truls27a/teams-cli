@@ -1,6 +1,6 @@
 # teams-cli
 
-A Microsoft Teams CLI, born out of spite for the Electron desktop app and the way it eats RAM for breakfast.
+A Microsoft Teams CLI, born out of spite for the Electron desktop app and the way it eats RAM for breakfast. Also handy for letting agents read and send Teams messages on your behalf.
 
 ## Commands
 
