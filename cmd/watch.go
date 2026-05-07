@@ -20,7 +20,6 @@ import (
 var (
 	watchInterval time.Duration
 	watchNotifier string
-	watchOnce     bool
 )
 
 type watchEntry struct {
@@ -164,9 +163,6 @@ var watchCmd = &cobra.Command{
 
 		tick()
 		seeded = true
-		if watchOnce {
-			return nil
-		}
 		t := time.NewTicker(watchInterval)
 		defer t.Stop()
 		for {
@@ -183,7 +179,6 @@ var watchCmd = &cobra.Command{
 func init() {
 	watchCmd.Flags().DurationVar(&watchInterval, "interval", 20*time.Second, "polling interval")
 	watchCmd.Flags().StringVar(&watchNotifier, "notifier", "auto", "notifier backend (auto|mac|stderr)")
-	watchCmd.Flags().BoolVar(&watchOnce, "once", false, "run a single tick and exit")
 }
 
 type notifier interface {
