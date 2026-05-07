@@ -5,17 +5,6 @@ import (
 	"net/http"
 )
 
-type APIError struct {
-	Method string
-	URL    string
-	Status int
-	Body   string
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%s %s: %d %s", e.Method, e.URL, e.Status, e.Body)
-}
-
 type Client struct {
 	MessagingBaseURL string
 	SkypeToken       string
@@ -46,4 +35,15 @@ func NewClient(messagingBaseURL, skypeToken, csaToken, region, mtToken, selfMRI 
 		SelfMRI:          selfMRI,
 		HTTP:             &http.Client{},
 	}
+}
+
+type APIError struct {
+	Method string
+	URL    string
+	Status int
+	Body   string
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("%s %s: %d %s", e.Method, e.URL, e.Status, e.Body)
 }
