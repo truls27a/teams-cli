@@ -3,9 +3,12 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -316,9 +319,9 @@ var chatViewCmd = &cobra.Command{
 }
 
 var chatSendCmd = &cobra.Command{
-	Use:   "send <conversation-id> <message>",
+	Use:   "send <conversation-id> [message]",
 	Short: "Send a message",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := loadClient()
 		if err != nil {
@@ -328,6 +331,51 @@ var chatSendCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+
+		var body string
+		if len(args) == 2 {
+			body = args[1]
+		} else {
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				b, err := io.ReadAll(os.Stdin)
+				if err != nil {
+					return err
+				}
+				body = string(b)
+			} else {
+				editor := os.Getenv("VISUAL")
+				if editor == "" {
+					editor = os.Getenv("EDITOR")
+				}
+				if editor == "" {
+					editor = "vi"
+				}
+				f, err := os.CreateTemp("", "teams-message-*.md")
+				if err != nil {
+					return err
+				}
+				path := f.Name()
+				f.Close()
+				defer os.Remove(path)
+				parts := strings.Fields(editor)
+				ec := exec.Command(parts[0], append(parts[1:], path)...)
+				ec.Stdin, ec.Stdout, ec.Stderr = os.Stdin, os.Stdout, os.Stderr
+				if err := ec.Run(); err != nil {
+					return err
+				}
+				b, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				body = string(b)
+			}
+		}
+		body = strings.TrimSpace(body)
+		if body == "" {
+			return errors.New("aborting: empty message")
+		}
+
 		clientMsgID := fmt.Sprintf("%d%03d", time.Now().UnixMilli(), rand.IntN(1000))
 		displayName := ""
 		if users, err := client.FetchShortProfile(context.Background(), []string{client.SelfMRI}); err == nil {
@@ -339,7 +387,7 @@ var chatSendCmd = &cobra.Command{
 			}
 		}
 		_, err = client.SendMessage(context.Background(), convID, teams.SendMessageRequest{
-			Content:         args[1],
+			Content:         body,
 			Messagetype:     "RichText/Html",
 			Contenttype:     "Text",
 			ClientMessageID: clientMsgID,
