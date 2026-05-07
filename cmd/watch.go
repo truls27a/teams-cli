@@ -58,8 +58,12 @@ var watchCmd = &cobra.Command{
 			return fmt.Errorf("unknown notifier %q (auto|mac|stderr)", watchNotifier)
 		}
 
-		home, _ := os.UserHomeDir()
-		statePath := filepath.Join(home, ".config", "teams", "watch-state.json")
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			home, _ := os.UserHomeDir()
+			cache = filepath.Join(home, ".cache")
+		}
+		statePath := filepath.Join(cache, "teams-cli", "chat-seen.json")
 
 		state := &watchState{Chats: map[string]watchEntry{}}
 		seeded := false

@@ -703,8 +703,12 @@ func firstName(s string) string {
 }
 
 func chatIndexPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "teams", "chat-index.json")
+	d, err := os.UserCacheDir()
+	if err != nil {
+		home, _ := os.UserHomeDir()
+		d = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(d, "teams-cli", "chat-index.json")
 }
 
 type chatIndex struct {
