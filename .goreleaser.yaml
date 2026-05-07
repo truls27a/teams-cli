@@ -39,6 +39,7 @@ changelog:
 
 brews:
   - name: teams-cli
+    directory: Formula
     repository:
       owner: truls27a
       name: homebrew-tap
