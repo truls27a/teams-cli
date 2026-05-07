@@ -43,16 +43,18 @@ var watchCmd = &cobra.Command{
 		}
 
 		var n notifier
-		switch watchNotifier {
-		case "auto":
+		switch {
+		case jsonOutput:
+			n = jsonNotifier{enc: json.NewEncoder(os.Stdout)}
+		case watchNotifier == "auto":
 			if runtime.GOOS == "darwin" {
 				n = macNotifier{}
 			} else {
 				n = stderrNotifier{}
 			}
-		case "mac":
+		case watchNotifier == "mac":
 			n = macNotifier{}
-		case "stderr":
+		case watchNotifier == "stderr":
 			n = stderrNotifier{}
 		default:
 			return fmt.Errorf("unknown notifier %q (auto|mac|stderr)", watchNotifier)
@@ -350,4 +352,15 @@ type stderrNotifier struct{}
 func (stderrNotifier) notify(title, subtitle, body string) error {
 	_, err := fmt.Fprintf(os.Stderr, "[%s] %s — %s\n", subtitle, title, body)
 	return err
+}
+
+type jsonNotifier struct{ enc *json.Encoder }
+
+func (j jsonNotifier) notify(title, subtitle, body string) error {
+	return j.enc.Encode(struct {
+		Time     string `json:"time"`
+		Title    string `json:"title"`
+		Subtitle string `json:"subtitle"`
+		Body     string `json:"body"`
+	}{time.Now().UTC().Format(time.RFC3339), title, subtitle, body})
 }
