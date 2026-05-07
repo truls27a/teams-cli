@@ -24,5 +24,5 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "output as JSON")
-	rootCmd.AddCommand(authCmd, chatCmd)
+	rootCmd.AddCommand(authCmd, chatCmd, watchCmd)
 }
