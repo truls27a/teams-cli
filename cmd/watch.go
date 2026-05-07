@@ -76,11 +76,18 @@ var watchCmd = &cobra.Command{
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer cancel()
 
-		tick := func() {
+		tick := func() error {
 			chats, err := client.ListChats(ctx)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "watch tick: %v\n", err)
-				return
+				if strings.Contains(err.Error(), ": 401 ") || strings.Contains(err.Error(), ": 403 ") {
+					nc, rerr := loadClient()
+					if rerr != nil {
+						return fmt.Errorf("auth dead: %w", rerr)
+					}
+					client = nc
+				}
+				return nil
 			}
 			names := resolveMissingNames(ctx, client, chats)
 
@@ -159,9 +166,12 @@ var watchCmd = &cobra.Command{
 				b, _ := json.MarshalIndent(state, "", "  ")
 				_ = os.WriteFile(statePath, b, 0600)
 			}
+			return nil
 		}
 
-		tick()
+		if err := tick(); err != nil {
+			return err
+		}
 		seeded = true
 		t := time.NewTicker(watchInterval)
 		defer t.Stop()
@@ -170,7 +180,9 @@ var watchCmd = &cobra.Command{
 			case <-ctx.Done():
 				return nil
 			case <-t.C:
-				tick()
+				if err := tick(); err != nil {
+					return err
+				}
 			}
 		}
 	},
