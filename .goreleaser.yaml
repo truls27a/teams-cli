@@ -51,3 +51,8 @@ brews:
       bin.install "teams"
     test: |
       system "#{bin}/teams", "--help"
+    service: |
+      run [opt_bin/"teams", "watch"]
+      keep_alive true
+      log_path var/"log/teams-cli.log"
+      error_log_path var/"log/teams-cli.log"
